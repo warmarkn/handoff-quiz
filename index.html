@@ -196,6 +196,11 @@ select {
 .answer dt { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .03em; margin-top: 10px; }
 .answer dt:first-child { margin-top: 0; }
 .answer dd { margin: 2px 0 0; font-size: 16px; }
+.explain { margin-top: 8px; font-size: 14px; color: var(--muted); white-space: pre-wrap; }
+.facts { margin: 0; padding: 0; list-style: none; }
+.facts li { padding: 3px 0; }
+.facts .tr { font-weight: 600; }
+.facts .lo, .facts .hi { color: var(--bad); font-weight: 600; font-size: 12px; margin-left: 4px; }
 .feedback { margin-top: 14px; font-weight: 600; }
 .feedback.good { color: var(--good); }
 .feedback.bad { color: var(--bad); }
@@ -308,8 +313,9 @@ body.shielded main, body.shielded header { filter: blur(30px); }
       </div>
     </div>
     <div class="modes">
-      <button class="mode" data-mode="mixed" type="button"><div class="ic">✓</div><div><b>Mixed quiz</b><span>Multiple choice on each patient's details. Missed questions come back.</span></div></button>
-      <button class="mode" data-mode="which" type="button"><div class="ic">?</div><div><b>Which patient?</b><span>See a detail and pick the patient it belongs to.</span></div></button>
+      <button class="mode" data-mode="mixed" type="button"><div class="ic">✓</div><div><b>Mixed quiz</b><span>Labs, trends, contingencies, code status and more. Missed questions come back.</span></div></button>
+      <button class="mode" data-mode="labs" type="button"><div class="ic">↗</div><div><b>Labs &amp; trends</b><span>Values, which way they're heading, who's abnormal, plan thresholds.</span></div></button>
+      <button class="mode" data-mode="which" type="button"><div class="ic">?</div><div><b>Which patient?</b><span>Who has a sodium of 128? Who's on a drip? Who's DNR? Who's sickest?</span></div></button>
       <button class="mode" data-mode="flash" type="button"><div class="ic">↻</div><div><b>Flashcards</b><span>Recall on your own, then reveal and grade yourself.</span></div></button>
       <button class="mode" data-mode="study" type="button"><div class="ic">☰</div><div><b>Study cards</b><span>One patient at a time, details covered. Tap a detail to reveal it.</span></div></button>
     </div>
@@ -573,8 +579,315 @@ function finishPatient(p) {
   }
   p.fields = merged;
   p.text = norm([p.title, ...merged.map(f => f.value)].join(' '));
+  p.facts = extractFacts(p);
   p.on = true;
   return p;
+}
+
+/* ================= Clinical fact extraction ================= */
+// Reference ranges are adult defaults, used only to phrase "who is abnormal" questions.
+const LAB_DEFS = [
+  { key: 'na', name: 'Sodium', cs: ['Na\\+?', 'NA'], ci: ['sodium'], lo: 135, hi: 145, min: 95, max: 185, low: 'hyponatremia', high: 'hypernatremia' },
+  { key: 'k', name: 'Potassium', cs: ['K\\+?'], ci: ['potassium'], lo: 3.5, hi: 5.0, min: 1.5, max: 9.5, low: 'hypokalemia', high: 'hyperkalemia' },
+  { key: 'cl', name: 'Chloride', cs: ['Cl'], ci: ['chloride'], lo: 98, hi: 107, min: 60, max: 140 },
+  { key: 'hco3', name: 'Bicarbonate', cs: ['CO2'], ci: ['hco3', 'bicarbonate', 'bicarb', 'tco2'], lo: 22, hi: 29, min: 3, max: 45 },
+  { key: 'bun', name: 'BUN', ci: ['bun'], lo: 7, hi: 20, min: 1, max: 250 },
+  { key: 'cr', name: 'Creatinine', cs: ['Cr', 'SCr'], ci: ['creatinine', 'creat'], lo: 0.6, hi: 1.2, min: 0.1, max: 25 },
+  { key: 'glu', name: 'Glucose', cs: ['BG', 'BS', 'FSBG', 'CBG', 'FSBS'], ci: ['glucose', 'blood sugar', 'fingerstick'], lo: 70, hi: 180, min: 10, max: 2000, low: 'hypoglycemia', high: 'hyperglycemia' },
+  { key: 'ca', name: 'Calcium', cs: ['Ca'], ci: ['calcium'], lo: 8.5, hi: 10.5, min: 3, max: 20, low: 'hypocalcemia', high: 'hypercalcemia' },
+  { key: 'mg', name: 'Magnesium', cs: ['Mg'], ci: ['magnesium'], lo: 1.7, hi: 2.4, min: 0.3, max: 10, low: 'hypomagnesemia' },
+  { key: 'phos', name: 'Phosphorus', ci: ['phosphorus', 'phos', 'po4'], lo: 2.5, hi: 4.5, min: 0.3, max: 20 },
+  { key: 'ag', name: 'Anion gap', cs: ['AG'], ci: ['anion gap', 'gap'], lo: 4, hi: 12, min: 0, max: 60 },
+  { key: 'hgb', name: 'Hemoglobin', cs: ['Hb', 'HGB'], ci: ['hgb', 'hemoglobin', 'haemoglobin', 'h\\/h'], lo: 12, hi: 17, min: 2, max: 25, low: 'anemia' },
+  { key: 'hct', name: 'Hematocrit', ci: ['hct', 'hematocrit'], lo: 36, hi: 50, min: 6, max: 75 },
+  { key: 'wbc', name: 'WBC', ci: ['wbc', 'white count'], lo: 4, hi: 11, min: 0, max: 500, low: 'leukopenia', high: 'leukocytosis' },
+  { key: 'plt', name: 'Platelets', ci: ['platelet count', 'platelets', 'plts', 'plt'], lo: 150, hi: 400, min: 1, max: 2000, low: 'thrombocytopenia', high: 'thrombocytosis' },
+  { key: 'inr', name: 'INR', ci: ['inr'], lo: 0.8, hi: 1.2, min: 0.5, max: 15 },
+  { key: 'lac', name: 'Lactate', ci: ['lactic acid', 'lactate', 'lactic'], lo: 0, hi: 2, min: 0.1, max: 30 },
+  { key: 'trop', name: 'Troponin', ci: ['hs-troponin', 'hs-trop', 'troponin', 'trop'], min: 0, max: 100000 },
+  { key: 'bnp', name: 'BNP', ci: ['nt-probnp', 'probnp', 'bnp'], lo: 0, hi: 100, min: 0, max: 70000 },
+  { key: 'tbili', name: 'Bilirubin', ci: ['total bili', 't\\.? ?bili', 'bilirubin', 'bili'], lo: 0.1, hi: 1.2, min: 0, max: 60 },
+  { key: 'alb', name: 'Albumin', ci: ['albumin', 'alb'], lo: 3.5, hi: 5, min: 0.5, max: 7 },
+  { key: 'ast', name: 'AST', cs: ['AST'], lo: 0, hi: 40, min: 1, max: 30000 },
+  { key: 'alt', name: 'ALT', cs: ['ALT'], lo: 0, hi: 56, min: 1, max: 30000 },
+  { key: 'lipase', name: 'Lipase', ci: ['lipase'], lo: 0, hi: 160, min: 0, max: 50000 },
+  { key: 'ph', name: 'pH', cs: ['pH', 'PH'], lo: 7.35, hi: 7.45, min: 6.5, max: 7.9, low: 'acidemia', high: 'alkalemia', step: 0.04 },
+  { key: 'pco2', name: 'pCO2', ci: ['paco2', 'pco2'], lo: 35, hi: 45, min: 5, max: 150 },
+  { key: 'a1c', name: 'HbA1c', ci: ['hba1c', 'a1c'], lo: 4, hi: 5.6, min: 3, max: 20 },
+  { key: 'tsh', name: 'TSH', cs: ['TSH'], lo: 0.4, hi: 4, min: 0, max: 200 },
+  { key: 'ef', name: 'Ejection fraction', cs: ['EF', 'LVEF'], lo: 50, hi: 75, min: 5, max: 90 },
+  { key: 'ck', name: 'CK', cs: ['CK', 'CPK'], lo: 0, hi: 300, min: 0, max: 500000 },
+  { key: 'nh3', name: 'Ammonia', ci: ['ammonia', 'nh3'], lo: 0, hi: 50, min: 0, max: 1000 },
+  { key: 'pct', name: 'Procalcitonin', ci: ['procalcitonin', 'procal'], lo: 0, hi: 0.5, min: 0, max: 500 },
+  { key: 'ciwa', name: 'CIWA score', cs: ['CIWA'], lo: 0, hi: 8, min: 0, max: 67 },
+  { key: 'gcs', name: 'GCS', cs: ['GCS'], lo: 15, hi: 15, min: 3, max: 15 },
+  { key: 'hr', name: 'Heart rate', cs: ['HR'], ci: ['heart rate', 'pulse'], lo: 60, hi: 100, min: 20, max: 250, low: 'bradycardia', high: 'tachycardia' },
+  { key: 'sbp', name: 'Systolic BP', ci: ['systolic bp', 'systolic', 'sbp'], lo: 90, hi: 140, min: 40, max: 280, low: 'hypotension', high: 'hypertension' },
+  { key: 'map', name: 'MAP', cs: ['MAP'], lo: 65, hi: 110, min: 20, max: 200 },
+  { key: 'rr', name: 'Respiratory rate', cs: ['RR'], ci: ['respiratory rate', 'resp rate'], lo: 12, hi: 20, min: 4, max: 70, high: 'tachypnea' },
+  { key: 'spo2', name: 'O2 saturation', ci: ['spo2', 'sao2', 'o2 sats?', 'pulse ox', 'sats?'], lo: 92, hi: 100, min: 40, max: 100, low: 'hypoxemia' },
+  { key: 'temp', name: 'Temperature', cs: ['T', 'Tmax', 'TMax', 'Tm'], ci: ['temperature', 'temp', 't max'], lo: 36, hi: 38, min: 30, max: 110, high: 'fever', step: 0.4 },
+];
+const NUM = String.raw`(\d{1,5}(?:\.\d+)?)(?:\s?(?:s|k|K|%))?(?![A-Za-z\d])`;
+const numRe = () => new RegExp(NUM, 'g');
+const aliasSrc = a => a.replace(/ /g, '\\s*');
+for (const d of LAB_DEFS) {
+  const mk = (list, flags) => list && list.length
+    ? new RegExp(`(?<![A-Za-z0-9])(?:${list.slice().sort((a, b) => b.length - a.length).map(aliasSrc).join('|')})(?![A-Za-z])`, flags) : null;
+  d.reCS = mk(d.cs, 'g');
+  d.reCI = mk(d.ci, 'gi');
+}
+const LAB_BY_KEY = Object.fromEntries(LAB_DEFS.map(d => [d.key, d]));
+const COND_RE = /\b(if|when|unless|should|call|notify|page|transfuse|until)\b/i;
+const UP_RE = /(\bup-?trending|\buptrend\w*|\btrending up|\brising\b|\brose\b|\bincreas\w*|\bclimbing\b|↑|\bup\b)/i;
+const DOWN_RE = /(\bdown-?trending|\bdowntrend\w*|\btrending down|\bfalling\b|\bfell\b|\bdecreas\w*|\bdropp\w*|\bdrifting\b|↓|\bdown\b)/i;
+const TREND_START = /^\s*\(?\s*(up|down|trend|rising|falling|stable|increas|decreas|drift|flat|unchanged|steady|climb|dropp|↑|↓)/i;
+const STABLE_RE = /\b(stable|flat|unchanged|steady|no change)\b/i;
+
+function labRange(def, v) {
+  if (def.key === 'temp' && v > 50) return { lo: 96.8, hi: 100.4 };
+  return { lo: def.lo, hi: def.hi };
+}
+function plausible(def, v) {
+  if (def.key === 'temp') return (v >= 30 && v <= 43) || (v >= 86 && v <= 110);
+  return v >= def.min && v <= def.max;
+}
+function labFlag(def, v) {
+  const r = labRange(def, v);
+  if (r.lo == null || r.hi == null) return null;
+  if (v < r.lo) return 'low';
+  if (v > r.hi) return 'high';
+  return null;
+}
+function trendOf(vals, def) {
+  if (vals.length < 2) return null;
+  const a = vals[0], b = vals[vals.length - 1];
+  const tol = def.key === 'ph' ? 0.015 : Math.max(Math.abs(a) * 0.01, 1e-9);
+  if (Math.abs(b - a) <= tol) return 'stable';
+  return b > a ? 'up' : 'down';
+}
+
+function labHits(line) {
+  const hits = [];
+  for (const def of LAB_DEFS) for (const re of [def.reCS, def.reCI]) {
+    if (!re) continue;
+    re.lastIndex = 0;
+    for (const m of line.matchAll(re)) hits.push({ def, start: m.index, end: m.index + m[0].length });
+  }
+  hits.sort((a, b) => a.start - b.start || (b.end - b.start) - (a.end - a.start));
+  const kept = [];
+  for (const h of hits) if (!kept.length || h.start >= kept[kept.length - 1].end) kept.push(h);
+  return kept;
+}
+
+function labFactsFromLine(line, src) {
+  const out = [];
+  const hits = labHits(line);
+  hits.forEach((hit, i) => {
+    const def = hit.def;
+    let clause = line.slice(hit.end, i + 1 < hits.length ? hits[i + 1].start : line.length);
+    const cut = clause.search(/[;|]|\.\s|\.$/);
+    if (cut >= 0) clause = clause.slice(0, cut);
+    clause = clause.slice(0, 80);
+    const before = line.slice(i ? hits[i - 1].end : 0, hit.start);
+    const sentenceBefore = line.slice(0, hit.start).split(/[.;]\s/).pop();
+    const conditional = COND_RE.test(sentenceBefore);
+
+    // Thresholds ("if Hgb < 7") vs goals ("replete K to > 4")
+    const th = clause.match(new RegExp(String.raw`^\s*(?:(?:is|of|goal|target|keep|stays?|remains?|falls?|drops?|goes|rises?|increases?|decreases?|to|need|needs|gets?)\s+)*(<=|>=|≤|≥|<|>|below|under|above|over|less than|greater than|more than)\s*` + NUM, 'i'));
+    if (th) {
+      if (conditional) {
+        const op = /^(<|≤|<=|below|under|less)/i.test(th[1]) ? '<' : '>';
+        const v = parseFloat(th[2]);
+        if (plausible(def, v)) out.push({ type: 'threshold', key: def.key, name: def.name, op, value: v, str: th[2], line: src });
+      }
+      return;
+    }
+    if (conditional) return;
+
+    let vals = [], strs = [], baseline = false;
+    const arrow = clause.match(new RegExp(String.raw`^\s*(?:(?:[:=~≈]|is|was|now|of|at|level|lvl)\s*)*` + NUM + String.raw`(?:\s*(?:→|->|-->|=>|⟶|➝|➔|\bto\b|\bthen\b)\s*` + NUM.replace('(\\d', '(?:\\d') + ')*'));
+    if (arrow) {
+      for (const m of arrow[0].matchAll(numRe())) { strs.push(m[1]); }
+      const rest = clause.slice(arrow[0].length);
+      const commaMore = rest.match(new RegExp(String.raw`^(?:\s*,\s*` + NUM.replace('(\\d', '(?:\\d') + '){2,}(?=\\s*(?:$|[,;.)]))'));
+      if (commaMore && strs.length === 1) { for (const m of commaMore[0].matchAll(numRe())) strs.push(m[1]); }
+      const prior = rest.match(new RegExp(String.raw`^[\s,(]*(?:(?:up|down|increased|decreased|improved|worsened|rose|fell|dropped)\s+)?(from|prev(?:ious(?:ly)?)?|was|b\/?l|baseline|last)\s*:?\s*` + NUM, 'i'));
+      if (prior && strs.length === 1) { strs.unshift(prior[2]); baseline = /^b/i.test(prior[1]); }
+    } else {
+      const ft = clause.match(new RegExp(String.raw`\bfrom\s+` + NUM + String.raw`\s+to\s+` + NUM, 'i'));
+      const tf = clause.match(new RegExp(String.raw`\bto\s+` + NUM + String.raw`\s+from\s+` + NUM, 'i'));
+      if (ft) strs = [ft[1], ft[2]];
+      else if (tf) strs = [tf[2], tf[1]];
+    }
+    vals = strs.map(parseFloat);
+    if (vals.some(v => !plausible(def, v))) { vals = []; strs = []; }
+    if (vals.length >= 2 && Math.max(...vals) / Math.max(1e-9, Math.min(...vals)) > 6) { vals = []; strs = []; }
+
+    const segs = clause.split(/,(?!\s*\d)/);
+    const near = segs[0] + (segs[1] && TREND_START.test(segs[1]) ? ',' + segs[1] : '');
+    const ctx = (before.slice(-20) + ' ' + near).replace(/follow[\s-]?up|f\/u|set[\s-]?up|pick[\s-]?up|work[\s-]?up|w\/u/gi, '');
+    let dir = trendOf(vals, def);
+    if (!dir) dir = UP_RE.test(ctx) ? 'up' : DOWN_RE.test(ctx) ? 'down' : (vals.length && STABLE_RE.test(ctx)) ? 'stable' : null;
+    if (!vals.length && !dir) return;
+    const last = vals.length ? vals[vals.length - 1] : null;
+    out.push({ type: 'lab', key: def.key, name: def.name, vals, strs, last, lastStr: strs[strs.length - 1], dir, baseline, flag: last != null ? labFlag(def, last) : null, line: src });
+  });
+  // Blood pressure written as 120/80
+  for (const m of line.matchAll(/\b(?:BP|blood pressure)\s*:?\s*(\d{2,3})\/\d{2,3}(?:\s*(?:→|->|to)\s*(\d{2,3})\/\d{2,3})?/gi)) {
+    const sentenceBefore = line.slice(0, m.index).split(/[.;]\s/).pop();
+    if (COND_RE.test(sentenceBefore)) continue;
+    const strs = m[2] ? [m[1], m[2]] : [m[1]];
+    const def = LAB_BY_KEY.sbp, vals = strs.map(Number);
+    out.push({ type: 'lab', key: 'sbp', name: def.name, vals, strs, last: vals[vals.length - 1], lastStr: strs[strs.length - 1], dir: trendOf(vals, def), flag: labFlag(def, vals[vals.length - 1]), line: src });
+  }
+  return out;
+}
+
+const ABX = [
+  ['Ceftriaxone', /ceftriaxone|rocephin/], ['Cefepime', /cefepime/], ['Cefazolin', /cefazolin|ancef/], ['Ceftazidime', /ceftazidime/],
+  ['Cefuroxime', /cefuroxime/], ['Cephalexin', /cephalexin|keflex/], ['Cefoxitin', /cefoxitin/], ['Vancomycin', /\bvanc(?:o|omycin)?\b/],
+  ['Piperacillin-tazobactam', /zosyn|pip[\s-]?tazo?|piperacillin/], ['Meropenem', /meropenem|\bmero\b/], ['Ertapenem', /ertapenem/],
+  ['Imipenem', /imipenem/], ['Azithromycin', /azithro(?:mycin)?/], ['Doxycycline', /\bdoxy(?:cycline)?\b/], ['Levofloxacin', /levofloxacin|levaquin/],
+  ['Ciprofloxacin', /\bcipro(?:floxacin)?\b/], ['Metronidazole', /metronidazole|flagyl/], ['Clindamycin', /\bclinda(?:mycin)?\b/],
+  ['Linezolid', /linezolid/], ['Daptomycin', /\bdapto(?:mycin)?\b/], ['Ampicillin-sulbactam', /unasyn|amp(?:icillin)?[\s-]?sul\w*/],
+  ['Ampicillin', /\bampicillin\b(?![\s-]?sul)/], ['Amoxicillin-clavulanate', /augmentin|amox(?:icillin)?[\s-]?clav\w*/], ['Amoxicillin', /\bamoxicillin\b(?![\s-]?clav)/],
+  ['Nafcillin', /nafcillin/], ['Aztreonam', /aztreonam/], ['TMP-SMX', /bactrim|tmp[\s-]?smx/], ['Nitrofurantoin', /nitrofurantoin|macrobid/],
+  ['Fluconazole', /fluconazole/], ['Micafungin', /micafungin/], ['Acyclovir', /acyclovir/], ['Gentamicin', /\bgent(?:amicin)?\b/], ['Rifampin', /rifampin/],
+];
+const DEVICES = [
+  ['Foley catheter', /\bfoley\b|urinary catheter|indwelling catheter/i],
+  ['PICC line', /\bpicc\b/i],
+  ['Central line', /\bcvc\b|central line|\btlc\b|\bcordis\b|\bcvl\b/i],
+  ['Arterial line', /\ba[\s-]?line\b|\bart line\b|arterial line/i],
+  ['Chest tube', /chest tube/i],
+  ['NG/OG tube', /\b(ngt|ogt|ng tube|og tube|dobhoff|dht)\b/i],
+  ['PEG / G-tube', /\bpeg\b|\bg[\s-]?tube\b/i],
+  ['Tracheostomy', /\btrach(eostomy)?\b/i],
+  ['Endotracheal tube (intubated)', /\bintubated\b|\bett\b|mechanically ventilated|on the vent\b|\bon vent\b/i],
+  ['EVD', /\bevd\b|external ventricular drain/i],
+  ['Surgical drain', /\bjp drain\b|\bjp\b|\bdrains?\b/i],
+  ['Dialysis catheter', /hd cath\w*|trialysis|quinton|permcath|tunneled (dialysis )?cath\w*/i],
+  ['Telemetry', /\btele(metry)?\b/i],
+];
+const NEG_NEAR = /\b(no|not|removed|d\/c'?d?|dc'?d|discontinued|pulled|out|without|remove|discontinue)\b/i;
+const NOT_DRIPS = /^(the|a|an|iv|on|off|and|or|of|to|from|at|via|with|post|pre|drip|gtt|stop|start|started|continue|wean|titrate|restart|hold|held)$/i;
+
+function canonCode(v) {
+  const s = v.toLowerCase();
+  if (/comfort|\bcmo\b|hospice/.test(s)) return 'Comfort care';
+  if (/\bdnr\b|\bdnar\b/.test(s) && /\bdni\b/.test(s)) return 'DNR/DNI';
+  if (/\bdnr\b|\bdnar\b/.test(s)) return 'DNR';
+  if (/\bdni\b/.test(s)) return 'DNI';
+  if (/\bfull\b/.test(s)) return 'Full code';
+  return null;
+}
+
+function extractFacts(p) {
+  const facts = [];
+  const lines = [];
+  for (const f of p.fields) for (const l of f.value.split('\n')) if (l.trim()) lines.push({ label: f.label, text: l.trim() });
+
+  for (const { label, text } of lines) {
+    facts.push(...labFactsFromLine(text, text).map(x => ({ ...x, field: label })));
+    const low = text.toLowerCase();
+
+    if (/code/i.test(label) || /\b(full code|dnr|dni|dnar|comfort care|cmo)\b/i.test(text)) {
+      const c = canonCode(/code/i.test(label) ? text : (text.match(/\b(full code|dnr\/dni|dnr|dni|dnar|comfort care|cmo)\b/i) || [''])[0]);
+      if (c) facts.push({ type: 'code', value: c, line: text });
+    }
+    if (/severity|acuity|illness/i.test(label) || /^\s*(unstable|watcher|stable)\s*$/i.test(text)) {
+      const m = text.match(/\b(unstable|watcher|stable)\b/i);
+      if (m) facts.push({ type: 'severity', value: m[1][0].toUpperCase() + m[1].slice(1).toLowerCase(), line: text });
+    }
+    if (/allerg/i.test(label)) {
+      if (/\b(nkda|nka|none|no known)\b/i.test(text)) facts.push({ type: 'allergy', value: 'NKDA', none: true, line: text });
+      else for (const part of text.replace(/\([^)]*\)/g, '').split(/[,;\/]|\band\b/i)) {
+        const a = part.replace(/[-–:].*$/, '').trim();
+        if (a.length >= 2 && a.length <= 40) facts.push({ type: 'allergy', value: a[0].toUpperCase() + a.slice(1), line: text });
+      }
+    }
+    for (const m of text.matchAll(/\b([A-Za-z][A-Za-z-]{2,})\s+(?:gtt|drip|infusion)\b/gi)) {
+      if (NOT_DRIPS.test(m[1]) || COND_RE.test(text.slice(0, m.index).split(/[.;]\s/).pop()) && /\b(start|begin|initiate)\b/i.test(text.slice(Math.max(0, m.index - 25), m.index))) continue;
+      if (/\b(stop|off|wean(ed)? off|d\/c|start|begin|initiate|consider|may need|will|plan to|if)\b/i.test(text.slice(Math.max(0, m.index - 25), m.index))) continue;
+      facts.push({ type: 'drip', value: m[1].toLowerCase(), line: text });
+    }
+    const days = low.match(/\b(?:day|d)\s*#?\s*(\d{1,2})\b/);
+    for (const [name, re] of ABX) if (re.test(low)) facts.push({ type: 'abx', value: name, day: days ? +days[1] : null, line: text });
+    if (!/^\s*(if|when)\b/i.test(text)) {
+      const o2 = text.match(/(?<![<>]\s*)(\d{1,2}(?:\.\d)?)\s*(?:L|lpm|liters?)\b(?!\s*(?:NS|LR|bolus|fluid|neg|pos|out|in\b))/);
+      const modal = text.match(/\b(nasal cannula|NC|HFNC|high[\s-]?flow|NRB|non-?rebreather|face ?mask|venti ?mask|BiPAP|CPAP|NIPPV|room air|on RA)\b/i);
+      if (o2 && (modal || /\b(o2|oxygen)\b/i.test(text)) && !COND_RE.test(text.slice(0, o2.index))) facts.push({ type: 'o2', liters: parseFloat(o2[1]), value: `${o2[1]} L${modal && !/room air|on RA/i.test(modal[1]) ? ' ' + modal[1] : ''}`, line: text });
+      else if (modal && /bipap|cpap|nippv/i.test(modal[1])) facts.push({ type: 'o2', liters: null, value: modal[1], line: text });
+    }
+    for (const [name, re] of DEVICES) {
+      const m = text.match(re);
+      if (m && !NEG_NEAR.test(text.slice(Math.max(0, m.index - 18), m.index + m[0].length + 14))) facts.push({ type: 'device', value: name, line: text });
+    }
+    for (const seg of text.split(/(?=\b(?:if|when)\b)/i)) {
+      const m = seg.match(/^\s*(?:if|when)\s+(.{3,90}?)\s*(?:,|→|->|⇒|\bthen\b|:)\s*(?:then\s+)?(.{4,200})$/i);
+      if (m) facts.push({ type: 'ifthen', cond: m[1].trim(), action: m[2].trim().replace(/[.;]\s*$/, ''), line: text });
+    }
+    for (const m of text.matchAll(/\b(?:at|@|by|next(?:\s+at)?|due(?:\s+at)?)\s*([01]\d|2[0-3])(:?)([0-5]\d)\b/gi)) {
+      facts.push({ type: 'time', value: m[1] + m[3], line: text });
+    }
+    if (/^(one-?liner|dx|diagnosis|reason|admit\w*|admission|problem)/i.test(label) && text.length <= 60 && label !== 'Notes') {
+      facts.push({ type: 'reason', value: text, line: text });
+    }
+  }
+  return dedupeFacts(facts);
+}
+function dedupeFacts(facts) {
+  const seen = new Set(), out = [];
+  for (const f of facts) {
+    const k = f.type + '|' + (f.key || '') + '|' + (f.value ?? '') + '|' + (f.strs || []).join(',') + '|' + (f.op || '') + (f.cond || '');
+    if (seen.has(k)) continue;
+    seen.add(k); out.push(f);
+  }
+  return out;
+}
+// One summary per lab per patient: prefer the mention with a series; drop values if mentions conflict.
+function labSummary(p) {
+  const by = new Map();
+  for (const f of p.facts) if (f.type === 'lab') { if (!by.has(f.key)) by.set(f.key, []); by.get(f.key).push(f); }
+  const out = new Map();
+  for (const [k, fs] of by) {
+    const best = fs.slice().sort((a, b) => b.vals.length - a.vals.length)[0];
+    const lasts = new Set(fs.filter(f => f.last != null).map(f => f.last));
+    const series = fs.find(f => f.vals.length >= 2);
+    const s = { ...best };
+    if (!series && lasts.size > 1) { s.last = null; s.lastStr = null; s.flag = null; }
+    s.dir = (series || fs.find(f => f.dir) || best).dir;
+    out.set(k, s);
+  }
+  return out;
+}
+function factText(f) {
+  const arrow = { up: '↑ rising', down: '↓ falling', stable: '→ stable' };
+  switch (f.type) {
+    case 'lab': return `${f.name}${f.strs.length ? ' ' + f.strs.join(' → ') : ''}${f.baseline ? ' (from baseline)' : ''}${f.dir ? ' · ' + arrow[f.dir] : ''}`;
+    case 'threshold': return `Plan trigger: ${f.name} ${f.op} ${f.str}`;
+    case 'code': return `Code status: ${f.value}`;
+    case 'severity': return `Illness severity: ${f.value}`;
+    case 'allergy': return f.none ? 'No known drug allergies' : `Allergy: ${f.value}`;
+    case 'drip': return `On ${f.value} drip`;
+    case 'abx': return `${f.value}${f.day ? ' (day ' + f.day + ')' : ''}`;
+    case 'o2': return `Oxygen: ${f.value}`;
+    case 'device': return f.value;
+    case 'ifthen': return `If ${f.cond} → ${f.action}`;
+    case 'time': return `Due at ${f.value}`;
+    case 'reason': return `Reason: ${f.value}`;
+  }
+  return '';
+}
+function factsList(p) {
+  const shown = p.facts.filter(f => f.type !== 'reason' && f.type !== 'time');
+  if (!shown.length) return null;
+  return h('ul', { class: 'facts' }, shown.map(f => {
+    const li = h('li', null, factText(f));
+    if (f.type === 'lab' && f.flag) li.append(h('span', { class: f.flag === 'low' ? 'lo' : 'hi' }, f.flag.toUpperCase()));
+    return li;
+  }));
 }
 
 // ---- Tables: each row is a patient, or a 2-column table is one patient's label/value list
@@ -886,12 +1199,13 @@ function renderReview() {
   $('#ptCount').textContent = `(${onCount} of ${ps.length} selected)`;
   $('#ptList').replaceChildren(...ps.map((p, i) => {
     const body = h('div', { class: 'pt-body hidden' },
+      p.facts.length ? h('div', { class: 'answer', style: 'margin:6px 0 4px;font-size:14px' }, h('div', { class: 'tiny muted', style: 'margin-bottom:4px' }, 'RECOGNIZED FOR QUIZZING'), factsList(p) || '') : '',
       h('dl', null, p.fields.length ? p.fields.flatMap(f => [h('dt', null, f.label), h('dd', null, f.value)]) : h('dd', { class: 'muted' }, 'No details found')));
     const exp = h('button', { class: 'exp', type: 'button', 'aria-label': 'Show details', onclick: () => { body.classList.toggle('hidden'); exp.textContent = body.classList.contains('hidden') ? 'Show' : 'Hide'; } }, 'Show');
     return h('div', { class: 'pt' },
       h('div', { class: 'pt-head' },
         h('input', { type: 'checkbox', class: 'chk', checked: p.on, 'aria-label': 'Include ' + p.title, onchange: e => { p.on = e.target.checked; renderReview(); } }),
-        h('div', { class: 't' }, h('b', null, p.title), h('span', null, `${p.fields.length} detail${p.fields.length === 1 ? '' : 's'}`)),
+        h('div', { class: 't' }, h('b', null, p.title), h('span', null, `${p.fields.length} detail${p.fields.length === 1 ? '' : 's'} · ${p.facts.filter(f => f.type !== 'time' && f.type !== 'reason').length} clinical facts`)),
         exp),
       body);
   }));
@@ -926,9 +1240,205 @@ document.querySelectorAll('.mode').forEach(b => b.addEventListener('click', () =
 const activePatients = () => S.patients.filter(p => p.on);
 const activeFields = p => p.fields.filter(f => !S.fieldsOff.has(keyOf(f.label)) && f.value.trim());
 const factLines = f => f.value.split('\n').map(x => x.trim()).filter(x => x.length >= 3 && x.length <= 180);
+const DIR_WORD = { up: 'Rising', down: 'Falling', stable: 'Stable' };
+const quote = s => `From the handoff: “${s.length > 170 ? s.slice(0, 167) + '…' : s}”`;
+const clip = (s, n = 130) => s.length > n ? s.slice(0, n - 1) + '…' : s;
+const article = w => /^[aeiou]/i.test(w) ? 'an' : 'a';
+const labWord = def => /^[A-Z]{2,}|^pH|^pCO2|^HbA1c/.test(def.name) ? def.name : def.name.toLowerCase();
+const DEVICE_PHRASE = {
+  'Foley catheter': 'has a Foley catheter', 'PICC line': 'has a PICC line', 'Central line': 'has a central line',
+  'Arterial line': 'has an arterial line', 'Chest tube': 'has a chest tube', 'NG/OG tube': 'has an NG/OG tube',
+  'PEG / G-tube': 'has a PEG / G-tube', 'Tracheostomy': 'has a tracheostomy', 'Endotracheal tube (intubated)': 'is intubated',
+  'EVD': 'has an EVD', 'Surgical drain': 'has a surgical drain', 'Dialysis catheter': 'has a dialysis catheter', 'Telemetry': 'is on telemetry',
+};
+
+function shortNames(P) {
+  const short = p => {
+    const n = (p.name || '').replace(/\b\d{1,3}\s*(?:yo|y\/o|yr|y)?\s*[MF]\b.*$/i, '').replace(/[,\s]+$/, '').trim();
+    if (!n) return p.title;
+    if (n.includes(',')) return n.split(',')[0].trim();
+    const w = n.split(/\s+/);
+    return w[w.length - 1];
+  };
+  const counts = new Map();
+  for (const p of P) { p.short = short(p); counts.set(p.short, (counts.get(p.short) || 0) + 1); }
+  for (const p of P) if (counts.get(p.short) > 1) p.short = p.title;
+}
+
+// Numeric answer plus plausible nearby distractors, preferring real values from other patients.
+function numOptions(str, def, pool) {
+  const v = parseFloat(str);
+  const d = (str.split('.')[1] || '').length;
+  const f = x => x.toFixed(d);
+  const ans = f(v);
+  const seen = new Set([ans]), out = [];
+  const add = x => {
+    if (!isFinite(x) || x < 0 || (def && !plausible(def, x))) return;
+    const s = f(x);
+    if (!seen.has(s)) { seen.add(s); out.push(s); }
+  };
+  for (const x of shuffle(pool)) if (out.length < 2) add(x);
+  let steps;
+  if (def && def.step) steps = [1, -1, 2, -2, 3, -3].map(k => v + k * def.step * (def.key === 'temp' && v > 50 ? 1.8 : 1));
+  else if (Math.abs(v) >= 50 && Math.abs(v) < 200) steps = [3, -3, 6, -6, 9, -9, 14, -14].map(k => v + k);
+  else steps = [0.15, -0.15, 0.3, -0.3, 0.5, -0.4, 0.8, -0.6].map(r => v * (1 + r));
+  for (const x of shuffle(steps.slice(0, 4)).concat(steps.slice(4))) if (out.length < 3) add(x);
+  for (let k = 1; out.length < 3 && k < 30; k++) { add(v + k * Math.pow(10, -d)); add(v - k * Math.pow(10, -d)); }
+  return shuffle([{ text: ans, correct: true }, ...out.slice(0, 3).map(t => ({ text: t, correct: false }))]);
+}
+
+// Patient-choice options: p plus up to 3 others for whom isOther(q) is true (prefer ones with related data).
+function pickPatient(p, P, isOther, prefer) {
+  let others = shuffle(P.filter(q => q !== p && isOther(q)));
+  if (!others.length) return null;
+  if (prefer) others.sort((a, b) => (prefer(b) ? 1 : 0) - (prefer(a) ? 1 : 0));
+  return shuffle([p, ...others.slice(0, 3)]).map(q => ({ text: q.title, correct: q === p }));
+}
 
 function buildItems(mode) {
   const P = activePatients();
+  shortNames(P);
+  const items = [];
+  const add = it => { if (it && (it.kind !== 'mc' || (it.options && it.options.length >= 2))) items.push({ level: 2, ...it }); };
+  const which = (cat, p, prompt, options, line, review) => options && add({ kind: 'mc', cat, pick: true, p, prompt, options, explain: line ? quote(line) : null, review });
+  const sums = new Map(P.map(p => [p, labSummary(p)]));
+  const of = (p, type) => p.facts.filter(f => f.type === type);
+
+  /* ---- Labs, vitals and trends ---- */
+  for (const p of P) for (const [key, s] of sums.get(p)) {
+    const def = LAB_BY_KEY[key], lw = labWord(def);
+    const hasLab = q => sums.get(q).has(key);
+    if (s.last != null) {
+      const peerVals = P.filter(q => q !== p).map(q => sums.get(q).get(key)?.last).filter(v => v != null);
+      add({ kind: 'mc', cat: 'lab', p, tag: p.title, prompt: `What is ${p.short}'s ${s.vals.length > 1 ? 'latest ' : ''}${lw}?`, options: numOptions(s.lastStr, def, peerVals), explain: quote(s.line), review: `${def.name} ${s.strs.join(' → ')}` });
+      which('lab', p, `Which patient has ${article(lw)} ${lw} of ${s.lastStr}?`,
+        pickPatient(p, P, q => sums.get(q).get(key)?.last !== s.last, hasLab), s.line, `${def.name} ${s.lastStr}`);
+      if (s.flag) {
+        const term = s.flag === 'low' ? def.low : def.high;
+        which('lab', p, term ? `Which patient has ${term}?` : `Which patient has a ${s.flag} ${lw}?`,
+          pickPatient(p, P, q => sums.get(q).get(key)?.flag !== s.flag, hasLab), s.line, `${def.name} ${s.lastStr} (${s.flag})`);
+      }
+    }
+    if (s.dir) {
+      const ser = s.strs.length > 1 ? ` (${s.strs.join(' → ')})` : '';
+      add({ kind: 'mc', cat: 'trend', p, tag: p.title, prompt: `How is ${p.short}'s ${lw} trending?`, options: ['up', 'down', 'stable'].map(d => ({ text: DIR_WORD[d], correct: d === s.dir })), explain: quote(s.line), review: `${def.name} ${DIR_WORD[s.dir].toLowerCase()}${ser}` });
+      which('trend', p, `Whose ${lw} is ${DIR_WORD[s.dir].toLowerCase()}?`,
+        pickPatient(p, P, q => sums.get(q).get(key)?.dir !== s.dir, hasLab), s.line, `${def.name} ${DIR_WORD[s.dir].toLowerCase()}${ser}`);
+      if (s.vals.length >= 2) {
+        const prev = s.strs[s.strs.length - 2];
+        add({ kind: 'mc', cat: 'trend', p, tag: p.title,
+          prompt: s.baseline ? `${p.short}'s ${lw} is ${s.lastStr}. What is the baseline?` : `${p.short}'s ${lw} is now ${s.lastStr}. What was it before?`,
+          options: numOptions(prev, def, [s.last]), explain: quote(s.line), review: `${def.name} ${s.strs.join(' → ')}` });
+      }
+    }
+  }
+  for (const def of LAB_DEFS) {
+    const have = P.filter(q => sums.get(q).get(def.key)?.last != null);
+    if (have.length < 3) continue;
+    for (const dir of ['highest', 'lowest']) {
+      const opts = shuffle(have).slice(0, 4);
+      const vals = opts.map(q => sums.get(q).get(def.key).last);
+      const target = dir === 'highest' ? Math.max(...vals) : Math.min(...vals);
+      if (vals.filter(v => v === target).length !== 1) continue;
+      const p = opts[vals.indexOf(target)];
+      add({ kind: 'mc', cat: 'lab', pick: true, p, prompt: `Of these patients, who has the ${dir} ${labWord(def)}?`, options: shuffle(opts).map(q => ({ text: q.title, correct: q === p })), explain: opts.map(q => `${q.short}: ${sums.get(q).get(def.key).lastStr}`).join('  ·  '), review: `${dir} ${def.name} (${sums.get(p).get(def.key).lastStr})` });
+    }
+  }
+  for (const p of P) {
+    const ths = of(p, 'threshold');
+    for (const t of ths) {
+      if (ths.filter(x => x.key === t.key).length > 1) continue;
+      const def = LAB_BY_KEY[t.key];
+      add({ kind: 'mc', cat: 'lab', p, tag: p.title, prompt: `In ${p.short}'s contingency plan, what ${labWord(def)} triggers action?`, options: numOptions(t.str, def, []).map(o => ({ ...o, text: `${t.op} ${o.text}` })), explain: quote(t.line), review: `Trigger: ${def.name} ${t.op} ${t.str}` });
+    }
+  }
+
+  /* ---- Code status, severity, allergies ---- */
+  const codeOf = q => of(q, 'code')[0]?.value;
+  for (const p of P) {
+    const c = codeOf(p);
+    if (!c) continue;
+    const pool = shuffle([...new Set([...P.map(codeOf).filter(Boolean), 'Full code', 'DNR/DNI', 'DNR', 'Comfort care'])].filter(x => x !== c));
+    add({ kind: 'mc', cat: 'core', p, tag: p.title, prompt: `What is ${p.short}'s code status?`, options: shuffle([{ text: c, correct: true }, ...pool.slice(0, 3).map(t => ({ text: t, correct: false }))]), explain: quote(of(p, 'code')[0].line), review: `Code status: ${c}` });
+    if (c !== 'Full code') which('core', p, `Which patient is ${c}?`, pickPatient(p, P, q => codeOf(q) !== c, codeOf), of(p, 'code')[0].line, `Code status: ${c}`);
+  }
+  const sevOf = q => of(q, 'severity')[0]?.value;
+  for (const p of P) {
+    const sv = sevOf(p);
+    if (!sv) continue;
+    add({ kind: 'mc', cat: 'core', p, tag: p.title, prompt: `What is ${p.short}'s illness severity?`, options: ['Stable', 'Watcher', 'Unstable'].map(t => ({ text: t, correct: t === sv })), review: `Illness severity: ${sv}` });
+    if (sv !== 'Stable') which('core', p, sv === 'Unstable' ? 'Which patient is listed as Unstable?' : 'Which patient is a Watcher?', pickPatient(p, P, q => sevOf(q) !== sv, sevOf), null, `Illness severity: ${sv}`);
+  }
+  for (const p of P) for (const a of of(p, 'allergy')) {
+    if (a.none) continue;
+    const allergic = q => of(q, 'allergy').some(x => norm(x.value) === norm(a.value));
+    which('core', p, `Which patient is allergic to ${a.value.toLowerCase()}?`, pickPatient(p, P, q => !allergic(q), q => of(q, 'allergy').length), a.line, `Allergy: ${a.value}`);
+  }
+
+  /* ---- Treatments, oxygen, devices ---- */
+  for (const p of P) {
+    for (const d of of(p, 'drip')) {
+      const on = q => of(q, 'drip').some(x => x.value === d.value);
+      which('core', p, `Which patient is on ${article(d.value)} ${d.value} drip?`, pickPatient(p, P, q => !on(q)), d.line, `On ${d.value} drip`);
+    }
+    for (const a of of(p, 'abx')) {
+      const on = q => of(q, 'abx').some(x => x.value === a.value);
+      which('core', p, `Which patient is on ${a.value.toLowerCase()}?`, pickPatient(p, P, q => !on(q), q => of(q, 'abx').length), a.line, `On ${a.value}`);
+      if (a.day) {
+        const days = shuffle([a.day - 2, a.day - 1, a.day + 1, a.day + 2, a.day + 3].filter(x => x >= 1)).slice(0, 3);
+        add({ kind: 'mc', cat: 'core', p, tag: p.title, prompt: `What day of ${a.value.toLowerCase()} is ${p.short} on?`, options: shuffle([a.day, ...days].map(x => ({ text: `Day ${x}`, correct: x === a.day }))), explain: quote(a.line), review: `${a.value} day ${a.day}` });
+      }
+    }
+    for (const dv of of(p, 'device')) {
+      const has = q => of(q, 'device').some(x => x.value === dv.value);
+      which('core', p, `Which patient ${DEVICE_PHRASE[dv.value] || 'has ' + dv.value}?`, pickPatient(p, P, q => !has(q)), dv.line, dv.value);
+    }
+  }
+  const o2Of = q => of(q, 'o2').find(x => x.liters != null);
+  const onO2 = P.filter(o2Of);
+  for (const p of onO2) {
+    const o = o2Of(p);
+    const pool = onO2.filter(q => q !== p).map(q => o2Of(q).liters).concat([1, 2, 3, 4, 6, 10, 15].filter(x => Math.abs(x - o.liters) <= 4));
+    const opts = [...new Set(shuffle(pool).filter(x => x !== o.liters))].slice(0, 3);
+    add({ kind: 'mc', cat: 'core', p, tag: p.title, prompt: `How much oxygen is ${p.short} on?`, options: shuffle([o.liters, ...opts].map(x => ({ text: `${x} L`, correct: x === o.liters }))), explain: quote(o.line), review: `Oxygen: ${o.value}` });
+    if (onO2.length < P.length) which('core', p, 'Which patient is on supplemental oxygen?', pickPatient(p, P, q => !of(q, 'o2').length), o.line, `Oxygen: ${o.value}`);
+  }
+  if (onO2.length >= 2) {
+    const opts = shuffle(onO2).slice(0, 4);
+    const ls = opts.map(q => o2Of(q).liters), mx = Math.max(...ls);
+    if (ls.filter(x => x === mx).length === 1) {
+      const p = opts[ls.indexOf(mx)];
+      add({ kind: 'mc', cat: 'core', pick: true, p, prompt: 'Who needs the most supplemental oxygen?', options: shuffle(opts).map(q => ({ text: q.title, correct: q === p })), explain: opts.map(q => `${q.short}: ${o2Of(q).value}`).join('  ·  '), review: `Most oxygen (${o2Of(p).value})` });
+    }
+  }
+
+  /* ---- Contingencies, timed tasks, reason for admission ---- */
+  const allIf = P.flatMap(q => of(q, 'ifthen').map(f => ({ q, f })));
+  for (const { q: p, f } of allIf) {
+    const others = [...new Map(shuffle(allIf.filter(x => x.q !== p && norm(x.f.action) !== norm(f.action))).map(x => [norm(x.f.action), x.f.action])).values()].slice(0, 3);
+    if (!others.length) continue;
+    add({ kind: 'mc', cat: 'core', p, tag: p.title, prompt: `If ${f.cond}, what's the plan?`, options: shuffle([{ text: clip(f.action), correct: true }, ...others.map(t => ({ text: clip(t), correct: false }))]), explain: quote(f.line), review: `If ${f.cond} → ${f.action}` });
+  }
+  const timeCount = new Map();
+  for (const p of P) for (const t of new Set(of(p, 'time').map(x => x.value))) timeCount.set(t, (timeCount.get(t) || 0) + 1);
+  for (const p of P) for (const t of of(p, 'time')) {
+    if (timeCount.get(t.value) !== 1) continue;
+    which('core', p, `Which patient has something due at ${t.value}?`, pickPatient(p, P, () => true), t.line, `Due at ${t.value}: ${t.line}`);
+  }
+  for (const p of P) for (const r of of(p, 'reason')) {
+    const same = q => of(q, 'reason').some(x => norm(x.value) === norm(r.value));
+    which('core', p, `Which patient is here with ${r.value.replace(/\.$/, '')}?`, pickPatient(p, P, q => !same(q)), null, `Reason: ${r.value}`);
+  }
+
+  /* ---- Room ↔ name ---- */
+  const withRoom = P.filter(p => p.room && p.name);
+  if (withRoom.length >= 2) for (const p of withRoom) {
+    const others = shuffle(withRoom.filter(q => q !== p)).slice(0, 3);
+    add({ kind: 'mc', cat: 'which', pick: true, level: 1, p, prompt: `Who is in ${makeTitle(p.room, '')}?`, options: shuffle([p, ...others]).map(q => ({ text: q.name, correct: q === p })), review: `${makeTitle(p.room, '')} is ${p.name}` });
+    add({ kind: 'mc', cat: 'which', level: 1, p, prompt: `Where is ${p.name}?`, options: shuffle([p, ...others]).map(q => ({ text: makeTitle(q.room, ''), correct: q === p })), review: `${p.name} is in ${makeTitle(p.room, '')}` });
+  }
+
+  /* ---- Plain detail recall (label → value) and exact-text fallback ---- */
   const byLabel = new Map();
   for (const p of P) for (const f of activeFields(p)) {
     const k = keyOf(f.label);
@@ -936,62 +1446,62 @@ function buildItems(mode) {
     byLabel.get(k).push({ p, f });
   }
   const pool = P.flatMap(p => activeFields(p).map(f => ({ p, f })));
-  const items = [];
-  const patientOpts = p => shuffle([p, ...shuffle(P.filter(q => q !== p)).slice(0, 3)]).map(q => ({ text: q.title, correct: q === p }));
-  const uniqueLine = (p, line) => !P.some(q => q !== p && q.text.includes(norm(line)));
-  const withRoom = P.filter(p => p.room && p.name);
-
   for (const p of P) {
     const fs = activeFields(p);
     for (const f of fs) {
       const long = f.value.length > 140 || f.value.split('\n').length > 3;
-      if (mode === 'flash') { items.push({ kind: 'flash', p, label: f.label, answer: f.value }); continue; }
-      if (mode === 'mixed') {
-        let d = [];
-        if (!long) {
-          const ans = norm(f.value);
-          const same = shuffle((byLabel.get(keyOf(f.label)) || []).filter(x => x.p !== p && norm(x.f.value) !== ans)).map(x => x.f.value);
-          d = [...new Map(same.map(v => [norm(v), v])).values()].slice(0, 3);
-          if (d.length === 0 && (byLabel.get(keyOf(f.label)) || []).length < 2) {
-            const extra = shuffle(pool.filter(x => x.p !== p && x.f.value.length <= 140 && norm(x.f.value) !== ans && !d.some(v => norm(v) === norm(x.f.value)))).map(x => x.f.value);
-            d = d.concat(extra.slice(0, 3 - d.length));
-          }
+      add({ kind: 'flash', cat: 'flash', p, label: f.label, answer: f.value, review: `${f.label}: ${f.value}` });
+      const labby = p.facts.filter(x => x.field === f.label && (x.type === 'lab' || x.type === 'threshold')).length >= 2;
+      if (!long && !labby) {
+        const ans = norm(f.value);
+        const same = shuffle((byLabel.get(keyOf(f.label)) || []).filter(x => x.p !== p && norm(x.f.value) !== ans)).map(x => x.f.value);
+        let d = [...new Map(same.map(v => [norm(v), v])).values()].slice(0, 3);
+        if (d.length === 0 && (byLabel.get(keyOf(f.label)) || []).length < 2) {
+          d = [...new Map(shuffle(pool.filter(x => x.p !== p && x.f.value.length <= 140 && norm(x.f.value) !== ans)).map(x => [norm(x.f.value), x.f.value])).values()].slice(0, 3);
         }
-        if (d.length >= 1) items.push({ kind: 'mc', p, label: f.label, answer: f.value, options: shuffle([{ text: f.value, correct: true }, ...d.map(t => ({ text: t, correct: false }))]) });
-        else items.push({ kind: 'flash', p, label: f.label, answer: f.value });
+        if (d.length) add({ kind: 'mc', cat: 'field', level: 1, p, tag: p.title, prompt: f.label + '?', options: shuffle([{ text: f.value, correct: true }, ...d.map(t => ({ text: t, correct: false }))]), review: `${f.label}: ${f.value}` });
       }
-      if (P.length >= 2) {
-        const lines = factLines(f).filter(l => uniqueLine(p, l));
-        const pick = mode === 'which' ? lines : shuffle(lines).slice(0, 1);
-        for (const line of pick) items.push({ kind: 'which', p, label: f.label, fact: line, options: patientOpts(p) });
+      if (P.length >= 2) for (const line of shuffle(factLines(f).filter(l => !P.some(q => q !== p && q.text.includes(norm(l))))).slice(0, 1)) {
+        add({ kind: 'mc', cat: 'text', pick: true, level: 0, p, prompt: 'Which patient?', box: { label: f.label, text: line }, options: shuffle([p, ...shuffle(P.filter(q => q !== p)).slice(0, 3)]).map(q => ({ text: q.title, correct: q === p })), review: `${f.label}: ${line}` });
       }
     }
-    if (mode !== 'flash' && withRoom.length >= 2 && p.room && p.name) {
-      const others = shuffle(withRoom.filter(q => q !== p)).slice(0, 3);
-      items.push({ kind: 'room2name', p, options: shuffle([p, ...others]).map(q => ({ text: q.name, correct: q === p })) });
-      items.push({ kind: 'name2room', p, options: shuffle([p, ...others]).map(q => ({ text: makeTitle(q.room, ''), correct: q === p })) });
-    }
-    if (mode === 'flash' && fs.length) items.push({ kind: 'full', p });
+    if (fs.length || p.facts.length) add({ kind: 'full', cat: 'flash', p, review: 'Full patient recall' });
   }
-  return items;
+
+  let out;
+  if (mode === 'flash') out = items.filter(it => it.kind === 'flash' || it.kind === 'full');
+  else if (mode === 'labs') out = items.filter(it => it.cat === 'lab' || it.cat === 'trend');
+  else if (mode === 'which') {
+    out = items.filter(it => it.pick && it.cat !== 'text');
+    if (out.length < 8) out = out.concat(items.filter(it => it.cat === 'text'));
+  } else {
+    out = items.filter(it => it.kind === 'mc' && it.cat !== 'text');
+    if (out.length < 8) out = out.concat(items.filter(it => it.cat === 'text' || it.kind === 'flash'));
+  }
+  return out;
 }
 
 /* ================= Quiz runtime ================= */
 function startQuiz(mode, fixedItems) {
   S.lastMode = mode;
   let items = fixedItems ? fixedItems.map(it => ({ ...it, options: it.options && shuffle(it.options) })) : shuffle(buildItems(mode));
-  if (!items.length) { alert(mode === 'which' ? 'Need at least 2 patients with details for this mode.' : 'No quizzable details found for the selected patients.'); return; }
+  if (!items.length) {
+    alert(mode === 'labs' ? 'No lab values or trends were recognized in the selected patients.'
+      : mode === 'which' ? 'Need at least 2 patients with details for this mode.'
+      : 'No quizzable details found for the selected patients.');
+    return;
+  }
   if (!fixedItems && S.len && items.length > S.len) items = spread(items, S.len);
   items.forEach(it => { it.tries = 0; it.firstRight = null; });
   S.quiz = { mode, items, queue: items.slice(), done: 0, firstRight: 0, state: null };
   show('quiz');
   renderQ();
 }
-// Pick n items while covering as many patients as possible.
+// Pick n items covering as many patients as possible, higher-level questions first.
 function spread(items, n) {
   const byP = new Map();
   for (const it of items) { if (!byP.has(it.p)) byP.set(it.p, []); byP.get(it.p).push(it); }
-  const lanes = shuffle([...byP.values()]);
+  const lanes = shuffle([...byP.values()]).map(l => shuffle(l).sort((a, b) => b.level - a.level));
   const out = [];
   while (out.length < n && lanes.some(l => l.length)) for (const l of lanes) if (l.length && out.length < n) out.push(l.shift());
   return shuffle(out);
@@ -1003,29 +1513,26 @@ function renderQ() {
   if (!it) return finishQuiz();
   q.state = { answered: false };
   const total = q.items.length;
-  $('#qCount').textContent = `${q.done + 1 > total ? total : q.done + 1} of ${total}`;
+  $('#qCount').textContent = `${Math.min(q.done + 1, total)} of ${total}`;
   $('#qScore').textContent = `${q.firstRight} right first try`;
   $('#qBar').style.width = (q.done / total * 100) + '%';
   const card = $('#qCard');
   card.replaceChildren();
 
   if (it.kind === 'mc') {
-    card.append(h('div', { class: 'ptag' }, it.p.title), h('div', { class: 'prompt' }, it.label + '?'), optionList(it));
-  } else if (it.kind === 'which') {
-    card.append(h('div', { class: 'prompt' }, 'Which patient?'), h('div', { class: 'fact' }, h('span', { class: 'lbl' }, it.label), it.fact), optionList(it));
-  } else if (it.kind === 'room2name') {
-    card.append(h('div', { class: 'prompt' }, `Who is in ${makeTitle(it.p.room, '')}?`), optionList(it));
-  } else if (it.kind === 'name2room') {
-    card.append(h('div', { class: 'prompt' }, `Where is ${it.p.name}?`), optionList(it));
-  } else if (it.kind === 'flash' || it.kind === 'full') {
+    if (it.tag) card.append(h('div', { class: 'ptag' }, it.tag));
+    card.append(h('div', { class: 'prompt' }, it.prompt));
+    if (it.box) card.append(h('div', { class: 'fact' }, h('span', { class: 'lbl' }, it.box.label), it.box.text));
+    card.append(optionList(it));
+  } else {
     card.append(h('div', { class: 'ptag' }, it.p.title));
     card.append(h('div', { class: 'prompt' }, it.kind === 'full' ? 'Recall everything about this patient' : it.label + '?'));
-    if (it.kind === 'full') card.append(h('div', { class: 'muted small' }, activeFields(it.p).map(f => f.label).join(' · ')));
+    if (it.kind === 'full') card.append(h('div', { class: 'muted small' }, 'Labs and trends, code status, contingencies, to-dos…'));
     const reveal = h('button', { class: 'btn', type: 'button', style: 'margin-top:18px' }, 'Show answer');
     reveal.addEventListener('click', () => {
       reveal.remove();
       const ans = it.kind === 'full'
-        ? h('div', { class: 'answer' }, h('dl', null, activeFields(it.p).flatMap(f => [h('dt', null, f.label), h('dd', null, f.value)])))
+        ? h('div', { class: 'answer' }, factsList(it.p), h('dl', null, activeFields(it.p).flatMap(f => [h('dt', null, f.label), h('dd', null, f.value)])))
         : h('div', { class: 'answer' }, it.answer);
       card.append(ans, h('div', { class: 'grade' },
         h('button', { class: 'btn bad', type: 'button', onclick: () => grade(false) }, 'Missed it'),
@@ -1045,11 +1552,12 @@ function optionList(it) {
       btns.forEach((x, i) => { x.disabled = true; if (it.options[i].correct) x.classList.add('right'); });
       if (!o.correct) b.classList.add('wrong');
       const card = $('#qCard');
+      const explain = it.explain ? h('div', { class: 'explain' }, it.explain) : null;
       if (o.correct) {
-        card.append(h('div', { class: 'feedback good' }, 'Correct'));
-        setTimeout(() => grade(true), 650);
+        card.append(h('div', { class: 'feedback good' }, 'Correct'), explain || '',
+          h('button', { class: 'btn', type: 'button', style: 'margin-top:14px', onclick: () => grade(true) }, 'Next'));
       } else {
-        card.append(h('div', { class: 'feedback bad' }, 'Not quite. This one will come back.'),
+        card.append(h('div', { class: 'feedback bad' }, 'Not quite. This one will come back.'), explain || '',
           h('div', { class: 'row', style: 'margin-top:12px' },
             h('button', { class: 'btn secondary', type: 'button', onclick: () => patientSheet(it.p) }, 'View patient'),
             h('button', { class: 'btn', type: 'button', onclick: () => grade(false) }, 'Continue')));
@@ -1063,7 +1571,7 @@ function optionList(it) {
 
 function grade(right) {
   const q = S.quiz;
-  if (!q) return;
+  if (!q || !q.queue.length) return;
   const it = q.queue.shift();
   it.tries++;
   if (it.firstRight === null) { it.firstRight = right; if (right) q.firstRight++; }
@@ -1086,13 +1594,7 @@ function finishQuiz() {
   show('results');
 }
 function describe(it) {
-  switch (it.kind) {
-    case 'mc': case 'flash': return [h('b', null, `${it.p.title} — ${it.label}`), h('div', { class: 'a' }, it.answer)];
-    case 'which': return [h('b', null, it.p.title), h('div', { class: 'a' }, `${it.label}: ${it.fact}`)];
-    case 'room2name': case 'name2room': return [h('b', null, it.p.title), h('div', { class: 'a' }, 'Room ↔ name')];
-    case 'full': return [h('b', null, it.p.title), h('div', { class: 'a' }, 'Full patient recall')];
-  }
-  return [];
+  return [h('b', null, it.p.title), h('div', { class: 'a' }, it.review || '')];
 }
 $('#rDrill').addEventListener('click', () => startQuiz(S.lastMode, S.quiz.missed));
 $('#rAgain').addEventListener('click', () => startQuiz(S.lastMode));
@@ -1105,7 +1607,7 @@ function patientSheet(p) {
   bg.append(h('div', { class: 'sheet' },
     h('div', { class: 'grab' }),
     h('h2', null, p.title),
-    h('div', { class: 'answer', style: 'margin-top:8px' }, h('dl', null, p.fields.flatMap(f => [h('dt', null, f.label), h('dd', null, f.value)]))),
+    h('div', { class: 'answer', style: 'margin-top:8px' }, factsList(p) || '', h('dl', null, p.fields.flatMap(f => [h('dt', null, f.label), h('dd', null, f.value)]))),
     h('button', { class: 'btn', type: 'button', style: 'margin-top:14px', onclick: close }, 'Close')));
   document.body.append(bg);
 }
@@ -1125,6 +1627,12 @@ function renderStudy() {
   const fs = activeFields(p);
   $('#stCard').replaceChildren(
     h('h2', null, p.title),
+    ...(factsList(p) ? [(() => {
+      const key = st.i + ':facts';
+      const b = h('button', { type: 'button', class: 'cover' + (st.revealed.has(key) ? '' : ' hid') }, factsList(p));
+      b.addEventListener('click', () => { st.revealed.has(key) ? st.revealed.delete(key) : st.revealed.add(key); b.classList.toggle('hid'); });
+      return h('div', { class: 'sfield' }, h('div', { class: 'lbl' }, 'Key facts & trends'), b);
+    })()] : []),
     ...(fs.length ? fs.map((f, j) => {
       const key = st.i + ':' + j;
       const b = h('button', { type: 'button', class: 'cover' + (st.revealed.has(key) ? '' : ' hid') }, f.value);
@@ -1134,8 +1642,8 @@ function renderStudy() {
 }
 $('#stPrev').addEventListener('click', () => { if (S.study.i > 0) { S.study.i--; renderStudy(); } });
 $('#stNext').addEventListener('click', () => { if (S.study.i < S.study.list.length - 1) { S.study.i++; renderStudy(); } });
-$('#stReveal').addEventListener('click', () => { const st = S.study; activeFields(st.list[st.i]).forEach((_, j) => st.revealed.add(st.i + ':' + j)); renderStudy(); });
-$('#stHide').addEventListener('click', () => { const st = S.study; activeFields(st.list[st.i]).forEach((_, j) => st.revealed.delete(st.i + ':' + j)); renderStudy(); });
+$('#stReveal').addEventListener('click', () => { const st = S.study; st.revealed.add(st.i + ':facts'); activeFields(st.list[st.i]).forEach((_, j) => st.revealed.add(st.i + ':' + j)); renderStudy(); });
+$('#stHide').addEventListener('click', () => { const st = S.study; st.revealed.delete(st.i + ':facts'); activeFields(st.list[st.i]).forEach((_, j) => st.revealed.delete(st.i + ':' + j)); renderStudy(); });
 (() => {
   let x0 = null, y0 = null;
   const el = $('#s-study');
@@ -1170,31 +1678,36 @@ Rm 412 – Alvarez, Maria, 67F – CHF exacerbation
 Illness severity: Watcher
 Code: Full
 Allergies: Penicillin (rash)
-Summary: HFrEF, EF 25%, 8 kg weight gain, on IV furosemide 80 mg BID
-To do: Check 2200 BMP; replete K to >4 and Mg to >2
-If/then: If SBP <90, hold evening Lasix and call cardiology fellow
+Summary: HFrEF, EF 25%, 8 kg weight gain, on IV furosemide 80 mg BID, 2 L nasal cannula
+Labs: Na 131 → 128, K 3.2, Cr 1.1 → 1.6, BNP 2400
+To do: Check BMP at 2200; replete K to >4 and Mg to >2
+If/then: If SBP < 90, hold evening Lasix and call cardiology fellow
 
 Rm 415 – Chen, David, 54M – DKA
 Illness severity: Unstable
 Code: Full
 Allergies: NKDA
-Summary: T1DM, DKA after missed insulin; on insulin drip, anion gap 18 → 12
+Summary: T1DM, DKA after missed insulin; on insulin drip
+Labs: anion gap 24 → 18 → 12, glucose 412 → 236, K 5.4 → 4.3, pH 7.12
 To do: Hourly POC glucose; BMP q4h, next at 0000
-If/then: When gap closed x2, give glargine 20 units and stop drip 2 h later
+If/then: If K < 3.3, hold insulin drip and replete potassium
 
 Rm 420 – Okafor, Grace, 81F – Pneumonia
 Illness severity: Stable
 Code: DNR/DNI
 Allergies: Sulfa
-Summary: CAP, RLL, on ceftriaxone + azithromycin day 2, 2 L nasal cannula
-To do: Follow up AM blood cultures
-If/then: If O2 need > 4 L, get ABG and CXR, consider ICU eval
+Summary: CAP, RLL, on ceftriaxone + azithromycin day 2, 3 L nasal cannula
+Labs: WBC 18.2 → 13.5, lactate 1.4, Na 138, Cr 0.9
+Lines: PICC right arm, Foley
+To do: Follow up blood cultures at 0600
+If/then: If O2 need > 6 L, get ABG and CXR, consider ICU eval
 
 Rm 423 – Novak, Peter, 45M – Alcohol withdrawal
 Illness severity: Watcher
 Code: Full
 Allergies: Haloperidol (dystonia)
-Summary: Heavy daily use, last drink 36 h ago, CIWA 14 earlier, seizure history
+Summary: Heavy daily use, last drink 36 h ago, seizure history
+Labs: Mg 1.4, K 3.4, Plt 88, AST 210, ALT 95, CIWA 14 → 19
 To do: CIWA q2h; thiamine 500 mg IV TID
 If/then: If CIWA > 20 twice or any seizure, call rapid response
 
@@ -1202,9 +1715,10 @@ Rm 430 – Haddad, Leila, 72F – GI bleed
 Illness severity: Watcher
 Code: Full
 Allergies: Iodinated contrast
-Summary: Melena, Hgb 9.8 → 8.1, EGD tomorrow AM, on pantoprazole drip
+Summary: Melena, EGD tomorrow AM, on pantoprazole drip, 2 large-bore IVs
+Labs: Hgb 9.8 → 8.1, BUN 48, INR 1.3, Plt 210, Cr 1.0
 To do: Hgb q6h, next at 0200; keep NPO after midnight
-If/then: If Hgb < 7 or hemodynamically unstable, transfuse 1 unit and page GI
+If/then: If Hgb < 7 or HR > 120, transfuse 1 unit and page GI
 `;
 </script>
 </body>
