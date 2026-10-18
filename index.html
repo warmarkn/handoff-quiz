@@ -1,0 +1,1211 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- No network access of any kind: everything stays on the device. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex, nofollow">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Handoff Quiz">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="format-detection" content="telephone=no">
+<title>Handoff Quiz</title>
+<style>
+:root {
+  --bg: #f2f2f7;
+  --card: #ffffff;
+  --card2: #f7f7fa;
+  --text: #1c1c1e;
+  --muted: #6e6e73;
+  --line: #d8d8de;
+  --accent: #0a66d8;
+  --accent-ink: #ffffff;
+  --good: #1f8a3b;
+  --good-bg: #e3f5e7;
+  --bad: #c62828;
+  --bad-bg: #fde7e7;
+  --warn-bg: #fff6dc;
+  --warn-ink: #7a5600;
+  --shadow: 0 1px 2px rgba(0,0,0,.06), 0 2px 10px rgba(0,0,0,.04);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #000000;
+    --card: #1c1c1e;
+    --card2: #2c2c2e;
+    --text: #f2f2f7;
+    --muted: #98989f;
+    --line: #3a3a3c;
+    --accent: #3d8bfd;
+    --accent-ink: #ffffff;
+    --good: #4cd56f;
+    --good-bg: #12351d;
+    --bad: #ff6b6b;
+    --bad-bg: #3d1515;
+    --warn-bg: #3a2f10;
+    --warn-ink: #f5cf6b;
+    --shadow: none;
+  }
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 17px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+  min-height: 100dvh;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  overscroll-behavior-y: none;
+}
+button, select, input, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+.hidden { display: none !important; }
+
+header.bar {
+  position: sticky; top: 0; z-index: 5;
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 16px;
+  background: color-mix(in srgb, var(--bg) 85%, transparent);
+  -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--line);
+}
+header.bar h1 { font-size: 17px; font-weight: 600; margin: 0; flex: 1; text-align: center; }
+.bar-btn {
+  min-width: 64px; border: 0; background: none; color: var(--accent);
+  padding: 6px 0; font-size: 16px;
+}
+.bar-btn.left { text-align: left; }
+.bar-btn.right { text-align: right; }
+.bar-btn.danger { color: var(--bad); }
+
+main { max-width: 640px; margin: 0 auto; padding: 16px 16px 40px; }
+section.screen { display: none; }
+section.screen.active { display: block; }
+
+.card {
+  background: var(--card); border-radius: 14px; padding: 16px;
+  box-shadow: var(--shadow); margin-bottom: 14px;
+}
+.muted { color: var(--muted); }
+.small { font-size: 14px; }
+.tiny { font-size: 12px; }
+h2 { font-size: 22px; margin: 4px 0 8px; }
+h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 600; margin: 22px 4px 8px; }
+
+.btn {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%; min-height: 50px; padding: 12px 16px;
+  border: 0; border-radius: 12px;
+  background: var(--accent); color: var(--accent-ink);
+  font-weight: 600; font-size: 17px;
+}
+.btn.secondary { background: var(--card2); color: var(--accent); }
+.btn.ghost { background: transparent; color: var(--accent); }
+.btn + .btn { margin-top: 10px; }
+.btn:active { opacity: .75; }
+.row { display: flex; gap: 10px; }
+.row > * { flex: 1; margin-top: 0 !important; }
+
+.drop {
+  display: block; text-align: center; padding: 28px 16px;
+  border: 2px dashed var(--line); border-radius: 14px; background: var(--card);
+}
+.drop strong { display: block; font-size: 19px; margin: 8px 0 4px; color: var(--accent); }
+.drop input { display: none; }
+.icon-doc { width: 44px; height: 44px; color: var(--accent); }
+
+.privacy {
+  display: flex; gap: 10px; align-items: flex-start;
+  background: var(--warn-bg); color: var(--warn-ink);
+  padding: 12px 14px; border-radius: 12px; font-size: 14px; margin-bottom: 14px;
+}
+.privacy svg { flex: 0 0 auto; width: 20px; height: 20px; margin-top: 1px; }
+
+textarea {
+  width: 100%; min-height: 180px; padding: 12px; border-radius: 10px;
+  border: 1px solid var(--line); background: var(--card2); font-size: 15px; resize: vertical;
+}
+details summary { cursor: pointer; color: var(--accent); padding: 6px 0; }
+
+.err { background: var(--bad-bg); color: var(--bad); padding: 12px 14px; border-radius: 12px; margin-bottom: 14px; font-size: 15px; }
+
+/* Review */
+.list { background: var(--card); border-radius: 14px; overflow: hidden; box-shadow: var(--shadow); }
+.pt { border-bottom: 1px solid var(--line); }
+.pt:last-child { border-bottom: 0; }
+.pt-head { display: flex; align-items: center; gap: 12px; padding: 12px 14px; }
+.pt-head .t { flex: 1; min-width: 0; }
+.pt-head .t b { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pt-head .t span { font-size: 13px; color: var(--muted); }
+.pt-head .exp { border: 0; background: none; color: var(--muted); padding: 6px; font-size: 14px; }
+.pt-body { padding: 0 14px 12px 50px; font-size: 14px; }
+.pt-body dt { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .03em; margin-top: 8px; }
+.pt-body dd { margin: 2px 0 0; white-space: pre-wrap; }
+.chk { width: 24px; height: 24px; accent-color: var(--accent); flex: 0 0 auto; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  border: 1px solid var(--line); background: var(--card); color: var(--text);
+  border-radius: 999px; padding: 7px 12px; font-size: 14px;
+}
+.chip.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.chip .n { opacity: .7; margin-left: 4px; font-size: 12px; }
+
+.seg { display: flex; background: var(--card2); border-radius: 10px; padding: 3px; }
+.seg button { flex: 1; border: 0; background: none; padding: 8px 4px; border-radius: 8px; font-size: 15px; }
+.seg button.on { background: var(--card); box-shadow: 0 1px 3px rgba(0,0,0,.15); font-weight: 600; }
+
+select {
+  width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line);
+  background: var(--card); -webkit-appearance: none; appearance: none;
+}
+
+.modes { display: grid; gap: 10px; }
+.mode {
+  display: flex; align-items: center; gap: 14px; text-align: left;
+  background: var(--card); border: 0; border-radius: 14px; padding: 14px 16px; box-shadow: var(--shadow);
+}
+.mode:active { opacity: .7; }
+.mode .ic { width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; background: var(--accent); color: var(--accent-ink); font-size: 20px; flex: 0 0 auto; }
+.mode b { display: block; }
+.mode span { font-size: 14px; color: var(--muted); }
+
+/* Quiz */
+.progress { height: 6px; background: var(--card2); border-radius: 3px; overflow: hidden; margin: 2px 0 14px; }
+.progress > div { height: 100%; background: var(--accent); width: 0; transition: width .25s; }
+.qmeta { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+.ptag { display: inline-block; background: var(--card2); border-radius: 8px; padding: 4px 10px; font-weight: 600; font-size: 15px; margin-bottom: 10px; }
+.prompt { font-size: 21px; font-weight: 600; margin: 4px 0 4px; }
+.fact { font-size: 18px; white-space: pre-wrap; background: var(--card2); border-radius: 10px; padding: 12px 14px; margin: 10px 0 4px; }
+.fact .lbl { display: block; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); margin-bottom: 2px; }
+.opts { display: grid; gap: 10px; margin-top: 16px; }
+.opt {
+  text-align: left; padding: 14px 16px; min-height: 52px; border-radius: 12px;
+  border: 1.5px solid var(--line); background: var(--card); white-space: pre-wrap; font-size: 16px;
+}
+.opt:active { background: var(--card2); }
+.opt.right { border-color: var(--good); background: var(--good-bg); color: var(--good); font-weight: 600; }
+.opt.wrong { border-color: var(--bad); background: var(--bad-bg); color: var(--bad); }
+.opt[disabled] { cursor: default; }
+.answer { white-space: pre-wrap; font-size: 18px; margin-top: 14px; padding: 14px; border-radius: 12px; background: var(--card2); }
+.answer dl { margin: 0; }
+.answer dt { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .03em; margin-top: 10px; }
+.answer dt:first-child { margin-top: 0; }
+.answer dd { margin: 2px 0 0; font-size: 16px; }
+.feedback { margin-top: 14px; font-weight: 600; }
+.feedback.good { color: var(--good); }
+.feedback.bad { color: var(--bad); }
+.grade { display: flex; gap: 10px; margin-top: 16px; }
+.grade .btn { margin: 0; }
+.btn.bad { background: var(--bad-bg); color: var(--bad); }
+.btn.good { background: var(--good-bg); color: var(--good); }
+
+/* Study */
+.study-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.study-nav button { border: 0; background: var(--card); border-radius: 10px; padding: 8px 14px; color: var(--accent); box-shadow: var(--shadow); }
+.study-nav button[disabled] { opacity: .35; }
+.sfield { border-top: 1px solid var(--line); padding: 10px 0; }
+.sfield:first-of-type { border-top: 0; }
+.sfield .lbl { font-size: 12px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); }
+.cover {
+  display: block; width: 100%; text-align: left; border: 0; margin-top: 4px; padding: 8px 10px; border-radius: 8px;
+  background: var(--card2); white-space: pre-wrap; font-size: 16px; min-height: 40px;
+}
+.cover.hid { color: transparent; max-height: 40px; overflow: hidden; user-select: none; -webkit-user-select: none; }
+.cover.hid::before { content: "Tap to reveal"; position: absolute; color: var(--muted); text-shadow: none; font-size: 14px; }
+.cover { position: relative; }
+
+/* Results */
+.score { text-align: center; padding: 22px 16px; }
+.score .big { font-size: 56px; font-weight: 700; line-height: 1; }
+.missed-item { padding: 10px 0; border-top: 1px solid var(--line); font-size: 15px; }
+.missed-item:first-child { border-top: 0; }
+.missed-item b { display: block; }
+.missed-item .a { white-space: pre-wrap; color: var(--muted); }
+
+/* Sheet */
+.sheet-bg { position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 20; display: flex; align-items: flex-end; justify-content: center; }
+.sheet {
+  background: var(--card); width: 100%; max-width: 640px; max-height: 85dvh; overflow: auto;
+  border-radius: 16px 16px 0 0; padding: 16px 16px calc(20px + env(safe-area-inset-bottom));
+}
+.sheet .grab { width: 40px; height: 5px; border-radius: 3px; background: var(--line); margin: 0 auto 12px; }
+
+/* Privacy shield when app goes to background (keeps PHI out of the app switcher snapshot) */
+#shield {
+  position: fixed; inset: 0; z-index: 100; background: var(--bg);
+  display: none; align-items: center; justify-content: center; flex-direction: column; gap: 8px;
+}
+body.shielded #shield { display: flex; }
+body.shielded main, body.shielded header { filter: blur(30px); }
+#shield svg { width: 48px; height: 48px; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<div id="shield" aria-hidden="true">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+  <div class="muted">Hidden for privacy</div>
+</div>
+
+<header class="bar">
+  <button class="bar-btn left" id="backBtn" type="button"></button>
+  <h1 id="barTitle">Handoff Quiz</h1>
+  <button class="bar-btn right danger" id="clearBtn" type="button">Clear</button>
+</header>
+
+<main>
+  <!-- HOME -->
+  <section class="screen active" id="s-home">
+    <div class="privacy">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3z"/></svg>
+      <div><b>On-device only.</b> The handoff is read on this phone and kept in memory only. This page is blocked from making any network connection, and nothing is saved. Data is erased when you tap Clear, close the tab, or leave the app for more than 15 minutes.</div>
+    </div>
+    <div id="homeErr" class="err hidden"></div>
+    <label class="drop">
+      <svg class="icon-doc" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h6"/></svg>
+      <strong>Open handoff (.docx)</strong>
+      <span class="muted small">From Files, iCloud Drive or OneDrive</span>
+      <input type="file" id="fileInput" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
+    </label>
+    <div class="card" style="margin-top:14px">
+      <details id="pasteBox">
+        <summary>Or paste handoff text</summary>
+        <textarea id="pasteText" placeholder="Paste the handoff here…" autocomplete="off" autocorrect="off" spellcheck="false"></textarea>
+        <button class="btn" id="pasteGo" type="button" style="margin-top:10px">Use pasted text</button>
+      </details>
+      <button class="btn ghost" id="demoBtn" type="button" style="margin-top:6px">Try a demo (fictional patients)</button>
+    </div>
+    <h3>Tips</h3>
+    <div class="card small muted">
+      Works best when each patient starts with a room number or bolded name (e.g. <i>Rm 412 – Smith, 67M</i>) or is one row of a table, and details use labels like <i>Code: Full</i>, <i>Allergies: PCN</i>, <i>To do: …</i>. You can check and adjust what was found before quizzing.
+    </div>
+  </section>
+
+  <!-- REVIEW -->
+  <section class="screen" id="s-review">
+    <div class="card">
+      <h2 id="revTitle">Handoff</h2>
+      <div class="muted small" id="revSub"></div>
+      <div id="stratWrap" style="margin-top:12px">
+        <label class="small muted" for="stratSel">Split patients by</label>
+        <select id="stratSel"></select>
+      </div>
+    </div>
+
+    <h3>Practice</h3>
+    <div class="card" style="padding:12px">
+      <div class="small muted" style="margin:0 2px 6px">Questions per round</div>
+      <div class="seg" id="lenSeg">
+        <button type="button" data-len="10">10</button>
+        <button type="button" data-len="20" class="on">20</button>
+        <button type="button" data-len="40">40</button>
+        <button type="button" data-len="0">All</button>
+      </div>
+    </div>
+    <div class="modes">
+      <button class="mode" data-mode="mixed" type="button"><div class="ic">✓</div><div><b>Mixed quiz</b><span>Multiple choice on each patient's details. Missed questions come back.</span></div></button>
+      <button class="mode" data-mode="which" type="button"><div class="ic">?</div><div><b>Which patient?</b><span>See a detail and pick the patient it belongs to.</span></div></button>
+      <button class="mode" data-mode="flash" type="button"><div class="ic">↻</div><div><b>Flashcards</b><span>Recall on your own, then reveal and grade yourself.</span></div></button>
+      <button class="mode" data-mode="study" type="button"><div class="ic">☰</div><div><b>Study cards</b><span>One patient at a time, details covered. Tap a detail to reveal it.</span></div></button>
+    </div>
+
+    <h3>Patients <span id="ptCount"></span></h3>
+    <div class="list" id="ptList"></div>
+    <div class="row" style="margin-top:10px">
+      <button class="btn secondary" type="button" id="allOn">Select all</button>
+      <button class="btn secondary" type="button" id="allOff">Select none</button>
+    </div>
+
+    <h3>Details to quiz</h3>
+    <div class="card"><div class="chips" id="fieldChips"></div></div>
+  </section>
+
+  <!-- QUIZ -->
+  <section class="screen" id="s-quiz">
+    <div class="qmeta"><span id="qCount"></span><span id="qScore"></span></div>
+    <div class="progress"><div id="qBar"></div></div>
+    <div class="card" id="qCard"></div>
+  </section>
+
+  <!-- STUDY -->
+  <section class="screen" id="s-study">
+    <div class="study-nav">
+      <button type="button" id="stPrev">‹ Prev</button>
+      <span class="muted small" id="stPos"></span>
+      <button type="button" id="stNext">Next ›</button>
+    </div>
+    <div class="card" id="stCard"></div>
+    <div class="row">
+      <button class="btn secondary" type="button" id="stReveal">Reveal all</button>
+      <button class="btn secondary" type="button" id="stHide">Cover all</button>
+    </div>
+  </section>
+
+  <!-- RESULTS -->
+  <section class="screen" id="s-results">
+    <div class="card score">
+      <div class="big" id="rPct"></div>
+      <div class="muted" id="rSub" style="margin-top:6px"></div>
+    </div>
+    <button class="btn" type="button" id="rDrill">Drill the ones I missed</button>
+    <button class="btn secondary" type="button" id="rAgain">New round</button>
+    <button class="btn ghost" type="button" id="rHome">Back to patients</button>
+    <h3 id="rMissH">Missed</h3>
+    <div class="card" id="rMissed"></div>
+  </section>
+</main>
+
+<script>
+'use strict';
+
+/* ================= Utilities ================= */
+const $ = s => document.querySelector(s);
+const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+
+function h(tag, attrs, ...children) {
+  const el = document.createElement(tag);
+  if (attrs) for (const [k, v] of Object.entries(attrs)) {
+    if (v == null || v === false) continue;
+    if (k === 'class') el.className = v;
+    else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
+    else el.setAttribute(k, v === true ? '' : v);
+  }
+  for (const c of children.flat()) {
+    if (c == null || c === false) continue;
+    el.append(c instanceof Node ? c : document.createTextNode(String(c)));
+  }
+  return el;
+}
+function shuffle(a) {
+  a = a.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+const norm = s => s.toLowerCase().replace(/\s+/g, ' ').trim();
+const keyOf = label => norm(label).replace(/[^a-z0-9/&# ]/g, '');
+
+/* ================= DOCX reading (no libraries) ================= */
+async function readZipEntry(buf, wanted) {
+  const dv = new DataView(buf), u8 = new Uint8Array(buf);
+  let eocd = -1;
+  for (let i = buf.byteLength - 22; i >= Math.max(0, buf.byteLength - 65557); i--) {
+    if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) throw new Error('This file is not a .docx. If it is an older .doc, open it in Word or Pages and save it as .docx.');
+  const count = dv.getUint16(eocd + 10, true);
+  let p = dv.getUint32(eocd + 16, true);
+  const dec = new TextDecoder();
+  for (let n = 0; n < count; n++) {
+    if (dv.getUint32(p, true) !== 0x02014b50) break;
+    const method = dv.getUint16(p + 10, true);
+    const csize = dv.getUint32(p + 20, true);
+    const nlen = dv.getUint16(p + 28, true), xlen = dv.getUint16(p + 30, true), clen = dv.getUint16(p + 32, true);
+    const off = dv.getUint32(p + 42, true);
+    const name = dec.decode(u8.subarray(p + 46, p + 46 + nlen));
+    if (name === wanted) {
+      const start = off + 30 + dv.getUint16(off + 26, true) + dv.getUint16(off + 28, true);
+      const data = u8.subarray(start, start + csize);
+      if (method === 0) return dec.decode(data);
+      if (method === 8) {
+        if (typeof DecompressionStream === 'undefined') throw new Error('This browser is too old to read .docx files. Update iOS (16.4 or newer), or paste the text instead.');
+        const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+        return await new Response(stream).text();
+      }
+      throw new Error('Unsupported compression in this .docx file.');
+    }
+    p += 46 + nlen + xlen + clen;
+  }
+  return null;
+}
+
+// Direct element children, looking through wrapper elements (content controls, custom XML, tracked insertions).
+const WRAPPERS = new Set(['sdt', 'sdtContent', 'customXml', 'smartTag', 'ins', 'moveTo']);
+function kids(el, name) {
+  const out = [];
+  for (const n of el.childNodes) {
+    if (n.nodeType !== 1) continue;
+    if (WRAPPERS.has(n.localName)) {
+      if (n.localName === 'sdt') { const c = [...n.childNodes].find(x => x.localName === 'sdtContent'); if (c) out.push(...kids(c, name)); }
+      else out.push(...kids(n, name));
+    } else if (!name || n.localName === name) out.push(n);
+  }
+  return out;
+}
+function wattr(el, name) { return el.getAttributeNS(W, name) || el.getAttribute('w:' + name) || ''; }
+
+function textOf(node) {
+  let s = '';
+  for (const n of node.childNodes) {
+    if (n.nodeType !== 1) continue;
+    switch (n.localName) {
+      case 't': s += n.textContent; break;
+      case 'tab': s += ' '; break;
+      case 'br': case 'cr': s += '\n'; break;
+      case 'noBreakHyphen': case 'softHyphen': s += '-'; break;
+      case 'pPr': case 'rPr': case 'delText': case 'del': case 'instrText': case 'Fallback': case 'moveFrom': break;
+      default: s += textOf(n);
+    }
+  }
+  return s;
+}
+function isOn(el) { if (!el) return false; const v = wattr(el, 'val'); return v !== '0' && v !== 'false' && v !== 'none'; }
+
+function paraInfo(p) {
+  const pPr = kids(p, 'pPr')[0];
+  let style = '', ilvl = -1, outline = -1;
+  if (pPr) {
+    const ps = kids(pPr, 'pStyle')[0]; if (ps) style = wattr(ps, 'val');
+    const num = kids(pPr, 'numPr')[0];
+    if (num) { const il = kids(num, 'ilvl')[0]; ilvl = il ? (parseInt(wattr(il, 'val'), 10) || 0) : 0; }
+    const ol = kids(pPr, 'outlineLvl')[0]; if (ol) outline = parseInt(wattr(ol, 'val'), 10);
+  }
+  let chars = 0, bold = 0;
+  for (const r of p.getElementsByTagNameNS(W, 'r')) {
+    let t = ''; for (const x of r.getElementsByTagNameNS(W, 't')) t += x.textContent;
+    if (!t.trim()) continue;
+    chars += t.length;
+    const rPr = kids(r, 'rPr')[0];
+    if (rPr && isOn(kids(rPr, 'b')[0])) bold += t.length;
+  }
+  return {
+    text: textOf(p),
+    list: ilvl >= 0 || /^list/i.test(style),
+    ilvl: ilvl >= 0 ? ilvl : (/^list/i.test(style) ? 0 : -1),
+    heading: /^(heading|title|subtitle|berschrift|titre|kop|rubrik)/i.test(style) || (outline >= 0 && outline < 9),
+    bold: chars > 0 && bold >= chars * 0.9,
+  };
+}
+
+function cellLines(tc) {
+  const lines = [];
+  for (const n of kids(tc)) {
+    if (n.localName === 'p') {
+      const info = paraInfo(n);
+      for (const t of info.text.split('\n')) lines.push({ ...info, text: t });
+    } else if (n.localName === 'tbl') {
+      for (const row of tableRows(n)) lines.push({ text: row.filter(c => c.text).map(c => c.text.replace(/\n/g, ' ')).join(' | ') });
+    }
+  }
+  return lines.filter(l => l.text.trim());
+}
+function tableRows(tbl) {
+  return kids(tbl, 'tr').map(tr => {
+    const cells = [];
+    for (const tc of kids(tr, 'tc')) {
+      const tcPr = kids(tc, 'tcPr')[0];
+      const span = tcPr && kids(tcPr, 'gridSpan')[0] ? (parseInt(wattr(kids(tcPr, 'gridSpan')[0], 'val'), 10) || 1) : 1;
+      const lines = cellLines(tc);
+      cells.push({ lines, text: lines.map(l => l.text.trim()).join('\n').trim() });
+      for (let i = 1; i < span; i++) cells.push({ lines: [], text: '', spanned: true });
+    }
+    return cells;
+  });
+}
+
+async function docxToBlocks(buf) {
+  const xml = await readZipEntry(buf, 'word/document.xml');
+  if (!xml) throw new Error('Could not find the document text inside this file. Is it a Word document?');
+  const doc = new DOMParser().parseFromString(xml, 'application/xml');
+  if (doc.getElementsByTagName('parsererror').length) throw new Error('The document could not be read (malformed XML).');
+  const body = doc.getElementsByTagNameNS(W, 'body')[0];
+  const blocks = [];
+  for (const n of kids(body)) {
+    if (n.localName === 'p') blocks.push({ type: 'p', ...paraInfo(n) });
+    else if (n.localName === 'tbl') blocks.push({ type: 'tbl', rows: tableRows(n) });
+  }
+  return blocks;
+}
+
+function textToBlocks(text) {
+  return text.replace(/\r\n?/g, '\n').split('\n').map(t => {
+    const bullet = /^\s*([•\-*–·▪◦]|\d{1,2}[.)])\s+/.test(t);
+    const indent = (t.match(/^\s*/)[0].replace(/\t/g, '    ').length);
+    return { type: 'p', text: t, list: bullet, ilvl: bullet ? Math.min(3, Math.floor(indent / 2)) : -1, heading: false, bold: false };
+  });
+}
+
+/* ================= Handoff → patients ================= */
+const SECTION_RE = /^(i-?pass|illness severity|severity|patient summary|summary|one.?liner|action (list|items)|actions|situation awareness( (and|&) contingenc\w*)?|contingenc\w*|synthesis( by receiver)?|hpi|a\/?p|assessment( (and|&) plan)?|plan|to.?dos?|tasks|if\/then|code( status)?|allerg\w*|meds?|medications|labs?|vitals?|dispo\w*|overnight|pmh|hx|history|background|events|hospital course|access|lines|diet|ppx|prophylaxis|consults?|notes?|problems?|problem list|issues|contacts?|family|goals of care|goc)\s*:?$/i;
+const isSectionLabel = t => SECTION_RE.test(t.trim().replace(/^#\s*/, ''));
+const BULLET_RE = /^\s*([•\-*–·▪◦o]|\d{1,2}[.)])\s+/;
+const LETTER_LABELS = { i: 'Illness severity', p: 'Patient summary', a: 'Action list' };
+
+function matchLabel(s) {
+  const m = s.match(/^#?\s*([A-Za-z][^:：]{0,38}?)\s*[:：]\s*(.*)$/);
+  if (!m) return null;
+  let label = m[1].trim(); const value = m[2].trim();
+  if (label.split(/\s+/).length > 6) return null;
+  if (/\d$/.test(label) && /^\d/.test(value)) return null; // a time like 10:30
+  if (/^https?$/i.test(label)) return null;
+  if (LETTER_LABELS[label.toLowerCase()] && label.length === 1) label = LETTER_LABELS[label.toLowerCase()];
+  return { label, value };
+}
+
+function splitTitle(line) {
+  const s = line.replace(/^[\s•\-*–·#]+/, '').replace(/\s+/g, ' ').trim();
+  let room = '', rest = s;
+  const m = s.match(/^(?:(?:rm|room|bed|bd)\.?\s*#?\s*)?(\d{1,4}[a-z]?(?:-\d{1,2})?)\b\s*[-–—:|).,]?\s*(.*)$/i);
+  if (m) { room = m[1]; rest = m[2]; }
+  const parts = rest.split(/\s+[-–—|]\s+|\s*[|;]\s*/).map(x => x.trim()).filter(Boolean);
+  return { room, name: parts[0] || '', summary: parts.slice(1).join(' – ') };
+}
+function makeTitle(room, name) {
+  const r = room ? (/^\d/.test(room) ? 'Rm ' + room : room) : '';
+  return [r, name].filter(Boolean).join(' · ') || 'Patient';
+}
+
+function finishPatient(p) {
+  const merged = [], byKey = new Map();
+  for (const f of p.fields) {
+    const value = (f.lines ? f.lines.join('\n') : f.value || '').trim();
+    if (!value) continue;
+    const k = keyOf(f.label);
+    if (byKey.has(k)) byKey.get(k).value += '\n' + value;
+    else { const nf = { label: f.label.replace(/[:：]\s*$/, '').trim() || 'Notes', value }; byKey.set(k, nf); merged.push(nf); }
+  }
+  p.fields = merged;
+  p.text = norm([p.title, ...merged.map(f => f.value)].join(' '));
+  p.on = true;
+  return p;
+}
+
+// ---- Tables: each row is a patient, or a 2-column table is one patient's label/value list
+const NAME_COL = /\b(name|patient|pt|identif\w*)\b/i;
+const ROOM_COL = /\b(room|rm|bed|loc(ation)?)\b/i;
+const HEADER_WORDS = /\b(name|patient|pt|room|rm|bed|dx|diagnos\w*|plan|to.?do|hpi|assessment|summary|action|code|allerg\w*|issues?|problems?|tasks|contingenc\w*|severity|meds?|one.?liner|background|dispo\w*|status)\b/i;
+
+function looksHeader(row, rows) {
+  const ne = row.filter(c => c.text);
+  if (ne.length < Math.max(1, Math.ceil(row.filter(c => !c.spanned).length * 0.6))) return false;
+  if (!ne.every(c => c.text.length <= 40 && !c.text.includes('\n'))) return false;
+  if (ne.some(c => HEADER_WORDS.test(c.text))) return true;
+  const avg = r => r.reduce((a, c) => a + c.text.length, 0) / Math.max(1, r.length);
+  const rest = rows.slice(1);
+  return rest.length >= 2 && rest.reduce((a, r) => a + avg(r), 0) / rest.length > 1.8 * avg(row);
+}
+function isKV(rows) {
+  if (rows.length < 3) return false;
+  const two = rows.filter(r => r.filter(c => !c.spanned).length === 2);
+  if (two.length < rows.length * 0.8) return false;
+  if (looksHeader(rows[0], rows) && rows[0].some(c => NAME_COL.test(c.text) || ROOM_COL.test(c.text)) && HEADER_WORDS.test(rows[0][1]?.text || '')) return false;
+  const labels = two.map(r => r[0].text);
+  const shortish = labels.filter(t => t && t.length <= 40 && !t.includes('\n')).length;
+  const digits = labels.filter(t => /\d/.test(t)).length;
+  return shortish >= labels.length * 0.8 && digits <= labels.length * 0.3;
+}
+function precedingText(blocks, idx) {
+  for (let i = idx - 1; i >= 0 && i >= idx - 4; i--) {
+    const b = blocks[i];
+    if (b.type === 'tbl') return '';
+    if (b.text && b.text.trim()) return b.text.trim().split('\n')[0];
+  }
+  return '';
+}
+function kvPatient(rows, before) {
+  const fields = rows.filter(r => r[0] && r[0].text).map(r => ({ label: r[0].text.replace(/[:：]\s*$/, ''), value: r.slice(1).map(c => c.text).filter(Boolean).join('\n') }));
+  const nameF = fields.find(f => NAME_COL.test(f.label));
+  const roomF = fields.find(f => ROOM_COL.test(f.label));
+  let room = roomF ? roomF.value.split('\n')[0] : '', name = nameF ? nameF.value.split('\n')[0] : '';
+  if (!room && !name) {
+    const t = splitTitle(before || fields[0]?.value || 'Patient');
+    room = t.room; name = t.name;
+  }
+  return finishPatient({ title: makeTitle(room, name), room, name, fields });
+}
+function rowPatient(header, row) {
+  const nameI = header.findIndex(x => NAME_COL.test(x));
+  const roomI = header.findIndex((x, i) => ROOM_COL.test(x) && i !== nameI);
+  const fields = [];
+  let room = '', name = '';
+  const idCols = new Set();
+  if (nameI >= 0 || roomI >= 0) {
+    if (nameI >= 0) {
+      const ls = row[nameI]?.text.split('\n') || [];
+      idCols.add(nameI);
+      if (roomI < 0) { const t = splitTitle(ls[0] || ''); room = t.room; name = t.name; if (t.summary) ls.splice(1, 0, t.summary); }
+      else name = ls[0] || '';
+      if (ls.length > 1) fields.push({ label: 'Details', value: ls.slice(1).join('\n') });
+    }
+    if (roomI >= 0) { room = (row[roomI]?.text || '').split('\n')[0]; idCols.add(roomI); }
+  } else {
+    const ls = (row[0]?.text || '').split('\n');
+    idCols.add(0);
+    let rest;
+    if (ls.length > 1 && ls[0].length <= 8 && /\d/.test(ls[0])) { room = ls[0].replace(/^(rm|room|bed)\.?\s*#?\s*/i, ''); const t = splitTitle(ls[1]); name = t.name; rest = [t.summary, ...ls.slice(2)]; }
+    else { const t = splitTitle(ls[0]); room = t.room; name = t.name; rest = [t.summary, ...ls.slice(1)]; }
+    rest = rest.filter(Boolean);
+    if (rest.length) fields.push({ label: /^Column \d+$/.test(header[0]) ? 'Details' : header[0], value: rest.join('\n') });
+  }
+  row.forEach((c, i) => {
+    if (idCols.has(i) || c.spanned || !c.text) return;
+    fields.push({ label: header[i] || `Column ${i + 1}`, value: c.text });
+  });
+  return finishPatient({ title: makeTitle(room, name), room, name, fields });
+}
+function patientsFromTables(blocks) {
+  const patients = [];
+  let lastHeader = null;
+  blocks.forEach((b, idx) => {
+    if (b.type !== 'tbl') return;
+    const rows = b.rows.filter(r => r.some(c => c.text));
+    if (!rows.length) return;
+    if (isKV(rows)) { patients.push(kvPatient(rows, precedingText(blocks, idx))); return; }
+    let header, start = 0;
+    if (looksHeader(rows[0], rows)) { header = rows[0].map(c => c.text.replace(/\s+/g, ' ')); start = 1; lastHeader = header; }
+    else if (lastHeader && lastHeader.length === rows[0].length) header = lastHeader;
+    else { if (rows.length < 2) return; header = rows[0].map((_, i) => `Column ${i + 1}`); }
+    const headKey = header.join('|').toLowerCase();
+    for (const r of rows.slice(start)) {
+      const real = r.filter(c => !c.spanned);
+      if (r.map(c => c.text.replace(/\s+/g, ' ')).join('|').toLowerCase() === headKey) continue; // repeated header
+      if (real.length === 1 && r.length > 1) continue; // merged section row, e.g. "Team A"
+      if (r.filter(c => c.text).length === 1 && r.length >= 3 && r.find(c => c.text).text.length < 40) continue;
+      patients.push(rowPatient(header, r));
+    }
+  });
+  return patients.filter(p => p.fields.length || p.name);
+}
+
+// ---- Paragraph handoffs: find the line that starts each patient
+function toLines(blocks) {
+  const lines = [];
+  for (const b of blocks) {
+    if (b.type === 'p') {
+      const parts = b.text.split('\n');
+      parts.forEach((t, i) => lines.push(i === 0 ? { ...b, text: t } : { text: t, list: b.list, ilvl: b.ilvl }));
+    } else {
+      for (const r of b.rows) {
+        const cells = r.filter(c => c.text);
+        if (!cells.length) continue;
+        if (cells.length === 2 && cells[0].text.length <= 40 && !cells[0].text.includes('\n')) lines.push({ text: cells[0].text.replace(/[:：]\s*$/, '') + ': ' + cells[1].text.replace(/\n/g, '; ') });
+        else for (const c of cells) for (const l of c.lines) lines.push({ ...l });
+      }
+    }
+  }
+  return lines.map(l => ({ ...l, text: (l.text || '').replace(/ /g, ' ').replace(/[ \t]+/g, ' ').trimEnd() }));
+}
+
+const STRATEGIES = [
+  { id: 'room', name: 'Room / bed numbers', start: l => /^\s*[•\-*]?\s*(rm|room|bed|bd)\.?\s*#?\s*\d+/i.test(l.text) },
+  { id: 'number', name: 'Lines starting with a number', start: l => /^\s*\d{1,4}[a-z]?\s*[-–—|:]\s*[A-Za-z]/i.test(l.text) },
+  { id: 'heading', name: 'Headings', start: l => l.heading && l.text.trim() && !isSectionLabel(l.text) },
+  { id: 'bold', name: 'Bold lines', start: l => l.bold && l.text.trim().length <= 90 && !/[:：]\s*$/.test(l.text) && !isSectionLabel(l.text) && !matchLabel(l.text.trim()) },
+  { id: 'list', name: 'Top-level list items', start: (l, all) => all.hasDeep && l.list && l.ilvl === 0 && !isSectionLabel(l.text) },
+  { id: 'rule', name: 'Separator lines (---)', sep: l => /^\s*([-=_*~]\s*){3,}$/.test(l.text) },
+  { id: 'blank', name: 'Blank lines', sep: l => !l.text.trim() },
+];
+
+function splitBlocks(lines, strat) {
+  const out = [];
+  if (strat.start) {
+    let cur = null;
+    for (const l of lines) {
+      if (strat.start(l, lines)) { cur = { header: l, body: [] }; out.push(cur); }
+      else if (cur && l.text.trim()) cur.body.push(l);
+    }
+  } else {
+    let cur = null;
+    for (const l of lines) {
+      if (strat.sep(l)) { cur = null; continue; }
+      if (!l.text.trim()) continue;
+      if (!cur) { cur = { header: l, body: [] }; out.push(cur); }
+      else cur.body.push(l);
+    }
+  }
+  return out;
+}
+function blocksValid(bs) {
+  if (bs.length < 2) return false;
+  return bs.filter(b => b.body.length >= 1).length >= bs.length * 0.6;
+}
+
+function blockToPatient(block) {
+  const t = splitTitle(block.header.text);
+  const fields = [];
+  let cur = null, notes = null;
+  const addNote = s => { if (!notes) { notes = { label: 'Notes', lines: [] }; fields.push(notes); } notes.lines.push(s); };
+  if (t.summary) fields.push({ label: 'One-liner', lines: [t.summary] });
+  for (const l of block.body) {
+    const raw = l.text.trim();
+    if (!raw) continue;
+    const bulleted = l.list || BULLET_RE.test(raw);
+    const s = raw.replace(BULLET_RE, '').trim();
+    if (!s) continue;
+    const kv = matchLabel(s);
+    const hashSplit = !kv && s.match(/^#\s*([^-–—]{1,40}?)\s+[-–—]\s+(.+)$/);
+    if (kv) {
+      cur = { label: kv.label, lines: kv.value ? [kv.value] : [], inline: !!kv.value };
+      fields.push(cur);
+    } else if (hashSplit) {
+      cur = { label: hashSplit[1].trim(), lines: [hashSplit[2].trim()], inline: true };
+      fields.push(cur);
+    } else if ((isSectionLabel(s) || /^#\s*\S/.test(s) || ((l.heading || l.bold) && s.length < 40)) && s.length < 50) {
+      cur = { label: s.replace(/^#\s*/, '').replace(/[:：]\s*$/, ''), lines: [], inline: false };
+      fields.push(cur);
+    } else if (cur && (!cur.inline || bulleted)) {
+      cur.lines.push(s);
+    } else {
+      cur = null;
+      addNote(s);
+    }
+  }
+  return finishPatient({ title: makeTitle(t.room, t.name), room: t.room, name: t.name, fields });
+}
+
+function analyze(blocks) {
+  const tablePts = patientsFromTables(blocks);
+  const lines = toLines(blocks.filter(b => b.type === 'p' || tablePts.length < 2));
+  lines.hasDeep = lines.some(l => l.list && l.ilvl >= 1);
+  const options = [];
+  if (tablePts.length >= 1) options.push({ id: 'tables', name: 'Table rows', patients: tablePts });
+  for (const s of STRATEGIES) {
+    const bs = splitBlocks(toLines(blocks), s);
+    if (bs.length >= 2) options.push({ id: s.id, name: s.name, patients: bs.map(blockToPatient), valid: blocksValid(bs) });
+  }
+  let auto = options.find(o => o.id === 'tables' && o.patients.length >= 2)
+    || options.find(o => o.valid)
+    || options[0];
+  return { options, auto: auto ? auto.id : null };
+}
+
+/* ================= App state ================= */
+const S = {
+  source: null,        // { name, analysis }
+  strategy: null,
+  patients: [],
+  fieldsOff: new Set(),
+  len: 20,
+  quiz: null,
+  study: null,
+  lastMode: 'mixed',
+};
+
+function wipe() {
+  S.source = null; S.strategy = null; S.patients = []; S.fieldsOff = new Set(); S.quiz = null; S.study = null;
+  $('#fileInput').value = '';
+  $('#pasteText').value = '';
+  $('#pasteBox').open = false;
+  ['#ptList', '#fieldChips', '#qCard', '#stCard', '#rMissed'].forEach(s => $(s).replaceChildren());
+  hideErr();
+  show('home');
+}
+
+/* ================= Navigation ================= */
+const TITLES = { home: 'Handoff Quiz', review: 'Patients', quiz: 'Quiz', study: 'Study', results: 'Results' };
+let current = 'home';
+function show(name) {
+  current = name;
+  document.querySelectorAll('section.screen').forEach(s => s.classList.toggle('active', s.id === 's-' + name));
+  $('#barTitle').textContent = TITLES[name];
+  const back = $('#backBtn');
+  back.textContent = name === 'home' ? '' : (name === 'review' ? '‹ Home' : '‹ Patients');
+  $('#clearBtn').classList.toggle('hidden', name === 'home' && !S.source);
+  window.scrollTo(0, 0);
+}
+$('#backBtn').addEventListener('click', () => {
+  if (current === 'review') show('home');
+  else if (current !== 'home') { S.quiz = null; renderReview(); show('review'); }
+});
+$('#clearBtn').addEventListener('click', () => {
+  if (!S.source || confirm('Erase the loaded handoff from this page?')) wipe();
+});
+
+function showErr(msg) { const e = $('#homeErr'); e.textContent = msg; e.classList.remove('hidden'); }
+function hideErr() { $('#homeErr').classList.add('hidden'); }
+
+/* ================= Loading ================= */
+$('#fileInput').addEventListener('change', async e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  hideErr();
+  try {
+    const buf = await f.arrayBuffer();
+    const blocks = await docxToBlocks(buf);
+    load(f.name.replace(/\.docx$/i, ''), blocks);
+  } catch (err) {
+    showErr(err.message || 'Could not read that file.');
+  } finally {
+    e.target.value = '';
+  }
+});
+$('#pasteGo').addEventListener('click', () => {
+  const t = $('#pasteText').value;
+  if (!t.trim()) return;
+  hideErr();
+  load('Pasted handoff', textToBlocks(t));
+  $('#pasteText').value = '';
+});
+$('#demoBtn').addEventListener('click', () => { hideErr(); load('Demo handoff (fictional)', textToBlocks(DEMO)); });
+
+function load(name, blocks) {
+  const analysis = analyze(blocks);
+  if (!analysis.auto) { showErr('No patients found. Try pasting the text instead, or check that each patient starts on its own line.'); return; }
+  S.source = { name, analysis };
+  S.fieldsOff = new Set();
+  applyStrategy(analysis.auto);
+  show('review');
+}
+function applyStrategy(id) {
+  S.strategy = id;
+  const opt = S.source.analysis.options.find(o => o.id === id);
+  // Copy so toggling patients doesn't leak across strategy switches
+  S.patients = opt.patients.map(p => ({ ...p, fields: p.fields.map(f => ({ ...f })), on: true }));
+  dedupeTitles(S.patients);
+  renderReview();
+}
+function dedupeTitles(ps) {
+  const seen = new Map();
+  for (const p of ps) {
+    const k = p.title; const n = (seen.get(k) || 0) + 1; seen.set(k, n);
+    if (n > 1) p.title = `${p.title} (${n})`;
+  }
+}
+
+/* ================= Review screen ================= */
+function renderReview() {
+  if (!S.source) return;
+  const ps = S.patients;
+  $('#revTitle').textContent = S.source.name;
+  const nFields = ps.reduce((a, p) => a + p.fields.length, 0);
+  $('#revSub').textContent = `${ps.length} patient${ps.length === 1 ? '' : 's'} · ${nFields} details found`;
+
+  const sel = $('#stratSel');
+  sel.replaceChildren(...S.source.analysis.options.map(o =>
+    h('option', { value: o.id, selected: o.id === S.strategy }, `${o.name} — ${o.patients.length} patients`)));
+  $('#stratWrap').classList.toggle('hidden', S.source.analysis.options.length < 2);
+
+  const onCount = ps.filter(p => p.on).length;
+  $('#ptCount').textContent = `(${onCount} of ${ps.length} selected)`;
+  $('#ptList').replaceChildren(...ps.map((p, i) => {
+    const body = h('div', { class: 'pt-body hidden' },
+      h('dl', null, p.fields.length ? p.fields.flatMap(f => [h('dt', null, f.label), h('dd', null, f.value)]) : h('dd', { class: 'muted' }, 'No details found')));
+    const exp = h('button', { class: 'exp', type: 'button', 'aria-label': 'Show details', onclick: () => { body.classList.toggle('hidden'); exp.textContent = body.classList.contains('hidden') ? 'Show' : 'Hide'; } }, 'Show');
+    return h('div', { class: 'pt' },
+      h('div', { class: 'pt-head' },
+        h('input', { type: 'checkbox', class: 'chk', checked: p.on, 'aria-label': 'Include ' + p.title, onchange: e => { p.on = e.target.checked; renderReview(); } }),
+        h('div', { class: 't' }, h('b', null, p.title), h('span', null, `${p.fields.length} detail${p.fields.length === 1 ? '' : 's'}`)),
+        exp),
+      body);
+  }));
+
+  // Field labels across patients
+  const labels = new Map();
+  for (const p of ps) for (const f of p.fields) {
+    const k = keyOf(f.label);
+    if (!labels.has(k)) labels.set(k, { label: f.label, n: 0 });
+    labels.get(k).n++;
+  }
+  const sorted = [...labels.entries()].sort((a, b) => b[1].n - a[1].n);
+  $('#fieldChips').replaceChildren(...(sorted.length ? sorted.map(([k, v]) =>
+    h('button', { type: 'button', class: 'chip' + (S.fieldsOff.has(k) ? '' : ' on'), onclick: () => { S.fieldsOff.has(k) ? S.fieldsOff.delete(k) : S.fieldsOff.add(k); renderReview(); } },
+      v.label, h('span', { class: 'n' }, v.n))) : [h('span', { class: 'muted small' }, 'No labelled details found.')]));
+}
+$('#stratSel').addEventListener('change', e => applyStrategy(e.target.value));
+$('#allOn').addEventListener('click', () => { S.patients.forEach(p => p.on = true); renderReview(); });
+$('#allOff').addEventListener('click', () => { S.patients.forEach(p => p.on = false); renderReview(); });
+$('#lenSeg').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  S.len = +b.dataset.len;
+  $('#lenSeg').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+});
+document.querySelectorAll('.mode').forEach(b => b.addEventListener('click', () => {
+  const mode = b.dataset.mode;
+  if (!S.patients.some(p => p.on)) { alert('Select at least one patient.'); return; }
+  if (mode === 'study') startStudy(); else startQuiz(mode);
+}));
+
+/* ================= Question building ================= */
+const activePatients = () => S.patients.filter(p => p.on);
+const activeFields = p => p.fields.filter(f => !S.fieldsOff.has(keyOf(f.label)) && f.value.trim());
+const factLines = f => f.value.split('\n').map(x => x.trim()).filter(x => x.length >= 3 && x.length <= 180);
+
+function buildItems(mode) {
+  const P = activePatients();
+  const byLabel = new Map();
+  for (const p of P) for (const f of activeFields(p)) {
+    const k = keyOf(f.label);
+    if (!byLabel.has(k)) byLabel.set(k, []);
+    byLabel.get(k).push({ p, f });
+  }
+  const pool = P.flatMap(p => activeFields(p).map(f => ({ p, f })));
+  const items = [];
+  const patientOpts = p => shuffle([p, ...shuffle(P.filter(q => q !== p)).slice(0, 3)]).map(q => ({ text: q.title, correct: q === p }));
+  const uniqueLine = (p, line) => !P.some(q => q !== p && q.text.includes(norm(line)));
+  const withRoom = P.filter(p => p.room && p.name);
+
+  for (const p of P) {
+    const fs = activeFields(p);
+    for (const f of fs) {
+      const long = f.value.length > 140 || f.value.split('\n').length > 3;
+      if (mode === 'flash') { items.push({ kind: 'flash', p, label: f.label, answer: f.value }); continue; }
+      if (mode === 'mixed') {
+        let d = [];
+        if (!long) {
+          const ans = norm(f.value);
+          const same = shuffle((byLabel.get(keyOf(f.label)) || []).filter(x => x.p !== p && norm(x.f.value) !== ans)).map(x => x.f.value);
+          d = [...new Map(same.map(v => [norm(v), v])).values()].slice(0, 3);
+          if (d.length === 0 && (byLabel.get(keyOf(f.label)) || []).length < 2) {
+            const extra = shuffle(pool.filter(x => x.p !== p && x.f.value.length <= 140 && norm(x.f.value) !== ans && !d.some(v => norm(v) === norm(x.f.value)))).map(x => x.f.value);
+            d = d.concat(extra.slice(0, 3 - d.length));
+          }
+        }
+        if (d.length >= 1) items.push({ kind: 'mc', p, label: f.label, answer: f.value, options: shuffle([{ text: f.value, correct: true }, ...d.map(t => ({ text: t, correct: false }))]) });
+        else items.push({ kind: 'flash', p, label: f.label, answer: f.value });
+      }
+      if (P.length >= 2) {
+        const lines = factLines(f).filter(l => uniqueLine(p, l));
+        const pick = mode === 'which' ? lines : shuffle(lines).slice(0, 1);
+        for (const line of pick) items.push({ kind: 'which', p, label: f.label, fact: line, options: patientOpts(p) });
+      }
+    }
+    if (mode !== 'flash' && withRoom.length >= 2 && p.room && p.name) {
+      const others = shuffle(withRoom.filter(q => q !== p)).slice(0, 3);
+      items.push({ kind: 'room2name', p, options: shuffle([p, ...others]).map(q => ({ text: q.name, correct: q === p })) });
+      items.push({ kind: 'name2room', p, options: shuffle([p, ...others]).map(q => ({ text: makeTitle(q.room, ''), correct: q === p })) });
+    }
+    if (mode === 'flash' && fs.length) items.push({ kind: 'full', p });
+  }
+  return items;
+}
+
+/* ================= Quiz runtime ================= */
+function startQuiz(mode, fixedItems) {
+  S.lastMode = mode;
+  let items = fixedItems ? fixedItems.map(it => ({ ...it, options: it.options && shuffle(it.options) })) : shuffle(buildItems(mode));
+  if (!items.length) { alert(mode === 'which' ? 'Need at least 2 patients with details for this mode.' : 'No quizzable details found for the selected patients.'); return; }
+  if (!fixedItems && S.len && items.length > S.len) items = spread(items, S.len);
+  items.forEach(it => { it.tries = 0; it.firstRight = null; });
+  S.quiz = { mode, items, queue: items.slice(), done: 0, firstRight: 0, state: null };
+  show('quiz');
+  renderQ();
+}
+// Pick n items while covering as many patients as possible.
+function spread(items, n) {
+  const byP = new Map();
+  for (const it of items) { if (!byP.has(it.p)) byP.set(it.p, []); byP.get(it.p).push(it); }
+  const lanes = shuffle([...byP.values()]);
+  const out = [];
+  while (out.length < n && lanes.some(l => l.length)) for (const l of lanes) if (l.length && out.length < n) out.push(l.shift());
+  return shuffle(out);
+}
+
+function renderQ() {
+  const q = S.quiz;
+  const it = q.queue[0];
+  if (!it) return finishQuiz();
+  q.state = { answered: false };
+  const total = q.items.length;
+  $('#qCount').textContent = `${q.done + 1 > total ? total : q.done + 1} of ${total}`;
+  $('#qScore').textContent = `${q.firstRight} right first try`;
+  $('#qBar').style.width = (q.done / total * 100) + '%';
+  const card = $('#qCard');
+  card.replaceChildren();
+
+  if (it.kind === 'mc') {
+    card.append(h('div', { class: 'ptag' }, it.p.title), h('div', { class: 'prompt' }, it.label + '?'), optionList(it));
+  } else if (it.kind === 'which') {
+    card.append(h('div', { class: 'prompt' }, 'Which patient?'), h('div', { class: 'fact' }, h('span', { class: 'lbl' }, it.label), it.fact), optionList(it));
+  } else if (it.kind === 'room2name') {
+    card.append(h('div', { class: 'prompt' }, `Who is in ${makeTitle(it.p.room, '')}?`), optionList(it));
+  } else if (it.kind === 'name2room') {
+    card.append(h('div', { class: 'prompt' }, `Where is ${it.p.name}?`), optionList(it));
+  } else if (it.kind === 'flash' || it.kind === 'full') {
+    card.append(h('div', { class: 'ptag' }, it.p.title));
+    card.append(h('div', { class: 'prompt' }, it.kind === 'full' ? 'Recall everything about this patient' : it.label + '?'));
+    if (it.kind === 'full') card.append(h('div', { class: 'muted small' }, activeFields(it.p).map(f => f.label).join(' · ')));
+    const reveal = h('button', { class: 'btn', type: 'button', style: 'margin-top:18px' }, 'Show answer');
+    reveal.addEventListener('click', () => {
+      reveal.remove();
+      const ans = it.kind === 'full'
+        ? h('div', { class: 'answer' }, h('dl', null, activeFields(it.p).flatMap(f => [h('dt', null, f.label), h('dd', null, f.value)])))
+        : h('div', { class: 'answer' }, it.answer);
+      card.append(ans, h('div', { class: 'grade' },
+        h('button', { class: 'btn bad', type: 'button', onclick: () => grade(false) }, 'Missed it'),
+        h('button', { class: 'btn good', type: 'button', onclick: () => grade(true) }, 'Got it')));
+    });
+    card.append(reveal);
+  }
+}
+
+function optionList(it) {
+  const wrap = h('div', { class: 'opts' });
+  const btns = it.options.map(o => {
+    const b = h('button', { class: 'opt', type: 'button' }, o.text);
+    b.addEventListener('click', () => {
+      if (S.quiz.state.answered) return;
+      S.quiz.state.answered = true;
+      btns.forEach((x, i) => { x.disabled = true; if (it.options[i].correct) x.classList.add('right'); });
+      if (!o.correct) b.classList.add('wrong');
+      const card = $('#qCard');
+      if (o.correct) {
+        card.append(h('div', { class: 'feedback good' }, 'Correct'));
+        setTimeout(() => grade(true), 650);
+      } else {
+        card.append(h('div', { class: 'feedback bad' }, 'Not quite. This one will come back.'),
+          h('div', { class: 'row', style: 'margin-top:12px' },
+            h('button', { class: 'btn secondary', type: 'button', onclick: () => patientSheet(it.p) }, 'View patient'),
+            h('button', { class: 'btn', type: 'button', onclick: () => grade(false) }, 'Continue')));
+      }
+    });
+    return b;
+  });
+  wrap.append(...btns);
+  return wrap;
+}
+
+function grade(right) {
+  const q = S.quiz;
+  if (!q) return;
+  const it = q.queue.shift();
+  it.tries++;
+  if (it.firstRight === null) { it.firstRight = right; if (right) q.firstRight++; }
+  if (right || it.tries >= 3) q.done++;
+  else q.queue.splice(Math.min(q.queue.length, 2 + Math.floor(Math.random() * 3)), 0, it);
+  renderQ();
+}
+
+function finishQuiz() {
+  const q = S.quiz;
+  const total = q.items.length;
+  const missed = q.items.filter(it => it.firstRight === false);
+  $('#rPct').textContent = Math.round(q.firstRight / total * 100) + '%';
+  $('#rSub').textContent = `${q.firstRight} of ${total} right on the first try`;
+  $('#rDrill').classList.toggle('hidden', !missed.length);
+  $('#rMissH').classList.toggle('hidden', !missed.length);
+  $('#rMissed').classList.toggle('hidden', !missed.length);
+  $('#rMissed').replaceChildren(...missed.map(it => h('div', { class: 'missed-item' }, ...describe(it))));
+  S.quiz.missed = missed;
+  show('results');
+}
+function describe(it) {
+  switch (it.kind) {
+    case 'mc': case 'flash': return [h('b', null, `${it.p.title} — ${it.label}`), h('div', { class: 'a' }, it.answer)];
+    case 'which': return [h('b', null, it.p.title), h('div', { class: 'a' }, `${it.label}: ${it.fact}`)];
+    case 'room2name': case 'name2room': return [h('b', null, it.p.title), h('div', { class: 'a' }, 'Room ↔ name')];
+    case 'full': return [h('b', null, it.p.title), h('div', { class: 'a' }, 'Full patient recall')];
+  }
+  return [];
+}
+$('#rDrill').addEventListener('click', () => startQuiz(S.lastMode, S.quiz.missed));
+$('#rAgain').addEventListener('click', () => startQuiz(S.lastMode));
+$('#rHome').addEventListener('click', () => { S.quiz = null; renderReview(); show('review'); });
+
+function patientSheet(p) {
+  const bg = h('div', { class: 'sheet-bg' });
+  const close = () => bg.remove();
+  bg.addEventListener('click', e => { if (e.target === bg) close(); });
+  bg.append(h('div', { class: 'sheet' },
+    h('div', { class: 'grab' }),
+    h('h2', null, p.title),
+    h('div', { class: 'answer', style: 'margin-top:8px' }, h('dl', null, p.fields.flatMap(f => [h('dt', null, f.label), h('dd', null, f.value)]))),
+    h('button', { class: 'btn', type: 'button', style: 'margin-top:14px', onclick: close }, 'Close')));
+  document.body.append(bg);
+}
+
+/* ================= Study mode ================= */
+function startStudy() {
+  S.study = { list: activePatients(), i: 0, revealed: new Set() };
+  show('study');
+  renderStudy();
+}
+function renderStudy() {
+  const st = S.study;
+  const p = st.list[st.i];
+  $('#stPos').textContent = `${st.i + 1} / ${st.list.length}`;
+  $('#stPrev').disabled = st.i === 0;
+  $('#stNext').disabled = st.i === st.list.length - 1;
+  const fs = activeFields(p);
+  $('#stCard').replaceChildren(
+    h('h2', null, p.title),
+    ...(fs.length ? fs.map((f, j) => {
+      const key = st.i + ':' + j;
+      const b = h('button', { type: 'button', class: 'cover' + (st.revealed.has(key) ? '' : ' hid') }, f.value);
+      b.addEventListener('click', () => { st.revealed.has(key) ? st.revealed.delete(key) : st.revealed.add(key); b.classList.toggle('hid'); });
+      return h('div', { class: 'sfield' }, h('div', { class: 'lbl' }, f.label), b);
+    }) : [h('div', { class: 'muted' }, 'No details selected for this patient.')]));
+}
+$('#stPrev').addEventListener('click', () => { if (S.study.i > 0) { S.study.i--; renderStudy(); } });
+$('#stNext').addEventListener('click', () => { if (S.study.i < S.study.list.length - 1) { S.study.i++; renderStudy(); } });
+$('#stReveal').addEventListener('click', () => { const st = S.study; activeFields(st.list[st.i]).forEach((_, j) => st.revealed.add(st.i + ':' + j)); renderStudy(); });
+$('#stHide').addEventListener('click', () => { const st = S.study; activeFields(st.list[st.i]).forEach((_, j) => st.revealed.delete(st.i + ':' + j)); renderStudy(); });
+(() => {
+  let x0 = null, y0 = null;
+  const el = $('#s-study');
+  el.addEventListener('touchstart', e => { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; }, { passive: true });
+  el.addEventListener('touchend', e => {
+    if (x0 == null) return;
+    const dx = e.changedTouches[0].clientX - x0, dy = e.changedTouches[0].clientY - y0;
+    x0 = null;
+    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) (dx < 0 ? $('#stNext') : $('#stPrev')).click();
+  });
+})();
+
+/* ================= Privacy: shield in background, auto-erase after 15 min away ================= */
+const AUTO_WIPE_MS = 15 * 60 * 1000;
+let hiddenAt = null;
+function goHidden() { document.body.classList.add('shielded'); if (hiddenAt == null) hiddenAt = Date.now(); }
+function goVisible() {
+  if (hiddenAt != null && Date.now() - hiddenAt > AUTO_WIPE_MS && S.source) wipe();
+  hiddenAt = null;
+  document.body.classList.remove('shielded');
+}
+document.addEventListener('visibilitychange', () => document.hidden ? goHidden() : goVisible());
+window.addEventListener('pagehide', goHidden);
+window.addEventListener('pageshow', e => { if (e.persisted) { goVisible(); } });
+window.addEventListener('blur', () => { if (S.source) document.body.classList.add('shielded'); });
+window.addEventListener('focus', () => { if (!document.hidden) goVisible(); });
+
+/* ================= Demo (fictional) ================= */
+const DEMO = `Night Signout — Medicine Team B
+
+Rm 412 – Alvarez, Maria, 67F – CHF exacerbation
+Illness severity: Watcher
+Code: Full
+Allergies: Penicillin (rash)
+Summary: HFrEF, EF 25%, 8 kg weight gain, on IV furosemide 80 mg BID
+To do: Check 2200 BMP; replete K to >4 and Mg to >2
+If/then: If SBP <90, hold evening Lasix and call cardiology fellow
+
+Rm 415 – Chen, David, 54M – DKA
+Illness severity: Unstable
+Code: Full
+Allergies: NKDA
+Summary: T1DM, DKA after missed insulin; on insulin drip, anion gap 18 → 12
+To do: Hourly POC glucose; BMP q4h, next at 0000
+If/then: When gap closed x2, give glargine 20 units and stop drip 2 h later
+
+Rm 420 – Okafor, Grace, 81F – Pneumonia
+Illness severity: Stable
+Code: DNR/DNI
+Allergies: Sulfa
+Summary: CAP, RLL, on ceftriaxone + azithromycin day 2, 2 L nasal cannula
+To do: Follow up AM blood cultures
+If/then: If O2 need > 4 L, get ABG and CXR, consider ICU eval
+
+Rm 423 – Novak, Peter, 45M – Alcohol withdrawal
+Illness severity: Watcher
+Code: Full
+Allergies: Haloperidol (dystonia)
+Summary: Heavy daily use, last drink 36 h ago, CIWA 14 earlier, seizure history
+To do: CIWA q2h; thiamine 500 mg IV TID
+If/then: If CIWA > 20 twice or any seizure, call rapid response
+
+Rm 430 – Haddad, Leila, 72F – GI bleed
+Illness severity: Watcher
+Code: Full
+Allergies: Iodinated contrast
+Summary: Melena, Hgb 9.8 → 8.1, EGD tomorrow AM, on pantoprazole drip
+To do: Hgb q6h, next at 0200; keep NPO after midnight
+If/then: If Hgb < 7 or hemodynamically unstable, transfuse 1 unit and page GI
+`;
+</script>
+</body>
+</html>
